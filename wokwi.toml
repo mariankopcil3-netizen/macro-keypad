@@ -1,0 +1,8 @@
+[wokwi]
+version = 1
+firmware = 'wokwi_build/upesy_wroom/firmware.bin'
+elf = 'wokwi_build/upesy_wroom/firmware.elf'
+
+[[chip]]
+name = 'st7789'
+binary = 'chips/st7789.chip.wasm'

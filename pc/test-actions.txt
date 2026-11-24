@@ -1,0 +1,6 @@
+MACRO:app:spotify
+ENC1:1
+ENC1:3
+ENC1:1
+ENC1_SW:1
+ENC1_SW:1

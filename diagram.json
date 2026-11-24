@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "author": "Keypad Project",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    {
+      "type": "chip-st7789",
+      "id": "lcd",
+      "top": -150,
+      "left": 180,
+      "attrs": {}
+    },
+    { "type": "wokwi-ky-040", "id": "encoder1", "top": 160, "left": -200, "attrs": {} },
+    { "type": "wokwi-ky-040", "id": "encoder2", "top": 280, "left": -200, "attrs": {} },
+
+    { "type": "wokwi-pushbutton", "id": "btn_r1c1", "top": -120, "left": -200, "attrs": { "color": "red" } },
+    { "type": "wokwi-pushbutton", "id": "btn_r1c2", "top": -120, "left": -140, "attrs": { "color": "red" } },
+    { "type": "wokwi-pushbutton", "id": "btn_r1c3", "top": -120, "left": -80, "attrs": { "color": "red" } },
+
+    { "type": "wokwi-pushbutton", "id": "btn_r2c1", "top": -60, "left": -200, "attrs": { "color": "red" } },
+    { "type": "wokwi-pushbutton", "id": "btn_r2c2", "top": -60, "left": -140, "attrs": { "color": "red" } },
+    { "type": "wokwi-pushbutton", "id": "btn_r2c3", "top": -60, "left": -80, "attrs": { "color": "red" } },
+
+    { "type": "wokwi-pushbutton", "id": "btn_r3c1", "top": 0, "left": -200, "attrs": { "color": "red" } },
+    { "type": "wokwi-pushbutton", "id": "btn_r3c2", "top": 0, "left": -140, "attrs": { "color": "red" } },
+    { "type": "wokwi-pushbutton", "id": "btn_r3c3", "top": 0, "left": -80, "attrs": { "color": "red" } },
+
+    { "type": "wokwi-pushbutton", "id": "btn_r4c1", "top": 60, "left": -200, "attrs": { "color": "red" } },
+    { "type": "wokwi-pushbutton", "id": "btn_r4c2", "top": 60, "left": -140, "attrs": { "color": "red" } },
+    { "type": "wokwi-pushbutton", "id": "btn_r4c3", "top": 60, "left": -80, "attrs": { "color": "red" } }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+    [ "esp:GND.1", "lcd:GND", "black", [ "v0" ] ],
+    [ "esp:3V3", "lcd:VCC", "red", [ "v0" ] ],
+    [ "esp:18", "lcd:SCL", "green", [ "v0" ] ],
+    [ "esp:23", "lcd:SDA", "green", [ "v0" ] ],
+    [ "esp:4", "lcd:RES", "orange", [ "v0" ] ],
+    [ "esp:16", "lcd:DC", "blue", [ "v0" ] ],
+    [ "esp:5", "lcd:CS", "yellow", [ "v0" ] ],
+    [ "esp:17", "lcd:BLK", "white", [ "v0" ] ],
+
+    [ "esp:32", "encoder1:CLK", "green", [ "v0" ] ],
+    [ "esp:33", "encoder1:DT", "green", [ "v0" ] ],
+    [ "esp:25", "encoder1:SW", "blue", [ "v0" ] ],
+    [ "esp:GND.1", "encoder1:GND", "black", [ "v0" ] ],
+    [ "esp:3V3", "encoder1:VCC", "red", [ "v0" ] ],
+
+    [ "esp:26", "encoder2:CLK", "green", [ "v0" ] ],
+    [ "esp:27", "encoder2:DT", "green", [ "v0" ] ],
+    [ "esp:14", "encoder2:SW", "blue", [ "v0" ] ],
+    [ "esp:GND.1", "encoder2:GND", "black", [ "v0" ] ],
+    [ "esp:3V3", "encoder2:VCC", "red", [ "v0" ] ],
+
+    [ "esp:15", "btn_r1c1:1.l", "purple", [ "v0" ] ],
+    [ "esp:15", "btn_r1c2:1.l", "purple", [ "v0" ] ],
+    [ "esp:15", "btn_r1c3:1.l", "purple", [ "v0" ] ],
+
+    [ "esp:2", "btn_r2c1:1.l", "purple", [ "v0" ] ],
+    [ "esp:2", "btn_r2c2:1.l", "purple", [ "v0" ] ],
+    [ "esp:2", "btn_r2c3:1.l", "purple", [ "v0" ] ],
+
+    [ "esp:19", "btn_r3c1:1.l", "purple", [ "v0" ] ],
+    [ "esp:19", "btn_r3c2:1.l", "purple", [ "v0" ] ],
+    [ "esp:19", "btn_r3c3:1.l", "purple", [ "v0" ] ],
+
+    [ "esp:21", "btn_r4c1:1.l", "purple", [ "v0" ] ],
+    [ "esp:21", "btn_r4c2:1.l", "purple", [ "v0" ] ],
+    [ "esp:21", "btn_r4c3:1.l", "purple", [ "v0" ] ],
+
+    [ "esp:22", "btn_r1c1:2.l", "gray", [ "v0" ] ],
+    [ "esp:22", "btn_r2c1:2.l", "gray", [ "v0" ] ],
+    [ "esp:22", "btn_r3c1:2.l", "gray", [ "v0" ] ],
+    [ "esp:22", "btn_r4c1:2.l", "gray", [ "v0" ] ],
+
+    [ "esp:12", "btn_r1c2:2.l", "gray", [ "v0" ] ],
+    [ "esp:12", "btn_r2c2:2.l", "gray", [ "v0" ] ],
+    [ "esp:12", "btn_r3c2:2.l", "gray", [ "v0" ] ],
+    [ "esp:12", "btn_r4c2:2.l", "gray", [ "v0" ] ],
+
+    [ "esp:13", "btn_r1c3:2.l", "gray", [ "v0" ] ],
+    [ "esp:13", "btn_r2c3:2.l", "gray", [ "v0" ] ],
+    [ "esp:13", "btn_r3c3:2.l", "gray", [ "v0" ] ],
+    [ "esp:13", "btn_r4c3:2.l", "gray", [ "v0" ] ]
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "ST7789 284x76",
+  "author": "Keypad Project",
+  "pins": ["VCC", "GND", "SCL", "SDA", "RES", "DC", "CS", "BLK"],
+  "display": {
+    "width": 284,
+    "height": 76
+  }
+}
