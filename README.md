@@ -7,6 +7,12 @@ Python + PySide6. Keys are remappable from the GUI — no reflashing required.
 **Status:** firmware and PC app are complete and tested in simulation (including a custom Wokwi
 display chip). Hardware bring-up in progress.
 
+## Screenshots
+
+PC companion app — live device preview, key binding grid, app library and action editor (UI is currently Czech):
+
+![Macro Keypad PC app](docs/images/app-main.png)
+
 ## Features
 
 **Firmware** (`src/main.cpp`, PlatformIO, ESP32 + Arduino framework)
@@ -99,19 +105,28 @@ src/            firmware (single-file Arduino sketch)
 chips/          custom Wokwi ST7789 display chip (C source + chip.json + WASM)
 pc/KeypadApp/   Python + PySide6 companion app
 pc/KeypadHost.ps1  legacy PowerShell host (sim/replay tool)
+cad/            Fusion 360 mechanical design (models + renders)
+print/          3D print files (STL/3MF, slicer notes, BOM)
+pcb/            KiCad interface board (schematic, layout, gerbers)
 hw_test/        bare-metal HW bring-up sketch
 tools/          helper scripts
+docs/images/    screenshots for this README
 diagram.json    Wokwi wiring
 NOTES.md        technical manual: protocol, key maps, build, troubleshooting
 ```
 
+The `cad/`, `print/` and `pcb/` folders describe their expected contents and are
+filled as the mechanical design and PCB layout progress.
+
 ## Roadmap
 
-1. HW bring-up — display, encoders (in progress)
-2. PC app ↔ real COM roundtrip
-3. Audio mixer polish (already functional via Core Audio)
-4. On-display telemetry + per-app volume widgets
-5. UI — display preview in the app, binding icons, theming, autostart
+1. HW bring-up — display, encoders, then the 4×3 key matrix (in progress)
+2. PC app ↔ real COM port roundtrip (blocked on ESP32 USB detection)
+3. On-display telemetry + encoder/volume widgets — done
+4. App UI — device preview, app library with icons, drag&drop binding editor,
+   wallpapers, theming — done
+5. Mechanical: Fusion enclosure + 3D-printed parts (`cad/`, `print/`)
+6. Electronics: KiCad interface board replacing the breadboard (`pcb/`)
 
 ## License
 
