@@ -108,6 +108,8 @@ def send_hotkey(combo):
 
 
 MOUSEEVENTF_WHEEL = 0x0800
+MOUSEEVENTF_MIDDLEDOWN = 0x0020
+MOUSEEVENTF_MIDDLEUP = 0x0040
 
 
 def send_wheel(steps, ctrl=False):
@@ -122,6 +124,13 @@ def send_wheel(steps, ctrl=False):
     if ctrl:
         time.sleep(0.01)
         _key_event(VK_NAMES["CTRL"], up=True)
+
+
+def send_middle_click():
+    """Middle mouse button click at the current cursor position."""
+    user32.mouse_event(MOUSEEVENTF_MIDDLEDOWN, 0, 0, 0, 0)
+    time.sleep(0.01)
+    user32.mouse_event(MOUSEEVENTF_MIDDLEUP, 0, 0, 0, 0)
 
 
 def send_text(text):

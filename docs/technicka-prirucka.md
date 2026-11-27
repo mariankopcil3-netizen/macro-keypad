@@ -1,8 +1,10 @@
-# MACRO KEYPAD - poznámky a postup testování
+# FINTR DECK - technická příručka
 
+> Cesty odpovídají struktuře repozitáře po v1.0.0: PC aplikace je v `pc_app/`,
+> firmware ve `firmware/` (PlatformIO projekt - otevírej složku `firmware/`).
 ## 1. Co firmware dělá
 
-- 12 kláves (matice 4x3) -> vyšle `KEY:<znak>` a `MACRO:<akce>` podle aktivního profilu.
+- 12 kláves (matice 3x4) -> vyšle `KEY:<znak>` a `MACRO:<akce>` podle aktivního profilu.
 - 2 enkodéry (EC11) -> vyšle `ENC1:<pozice>` / `ENC2:<pozice>`.
 - Stisk enkodéru 1 -> `ENC1_SW:1` (PC app: mute masteru).
 - Stisk enkodéru 2 -> `ENC2_SW:1` + `MACRO:custom` (PC app: mute cílové aplikace).
@@ -14,28 +16,51 @@
 
 ### ESP32 -> PC
 ```
-KEY:<znak>            napr. KEY:1
+KEY:<znak>            napr. KEY:1 .. KEY:9
 MACRO:<akce>          napr. MACRO:undo
 ENC1:<pozice>         napr. ENC1:12
 ENC2:<pozice>         napr. ENC2:-3
 ENC1_SW:1             stisk tlacitka enkoderu 1
 ENC2_SW:1             stisk tlacitka enkoderu 2
 PROFILE:<n>:<nazev>   napr. PROFILE:2:MEDIA
+VER:<n>               verze firmwaru (odpoved na `?`)
+KEYMAP:<12 znaku>     pouzita / zmenena mapa matice
+WP:BEGIN:<B>          tapeta prijata (B = pocet bajtu, 43168)
+WP:ACK:<blok>         blok tapety ulozen do RAM
+WP:OK:<B>             tapeta vykreslena
+WP:TRUNC / WP:BAD     neuplny nebo spatne velky prenos
 ```
 
 ### PC -> ESP32 (ukončeno `\n`)
 ```
-T:CPU=45;GPU=30;TEMP=52
+T:CPU=45;GPU=30;RAM=52;TEMP=52
+V:E1=42;E2=17;M1=0;M2=0
 P:2
 N:2:MEDIA
 H:hello
+A:A855F7
+F:5
+?
+M:123456789*0#
+W:B:43168                zacatek prenosu design frame
+W:0:<1024 znaku base64>  blok 768 B (RGB565 big-endian)
+W:E                      konec -> vykresleni
 ```
-`T:` aktualizuje telemetrii, `P:` přepne profil (1..3),
+`T:` aktualizuje telemetrii, `V:` posílá procenta a mute stav pro oblouky
+E1/E2 na displeji (při změně + keepalive každé 2 s), `P:` přepne profil (1..3),
 `N:<n>:<nazev>` přejmenuje stránku zobrazenou na displeji (posílá PC app
 při připojení a po každé změně bindings) — firmware odpoví `PAGENAME:<n>:<nazev>`
 a `PROFILE:<n>:<nazev>`,
-`H:<text>` zobrazí testovací text na displeji (5 s, pak se vrátí UI) —
-pro rychlou kontrolu vykreslení/orientace displeje.
+`H:<text>` zobrazí testovací text na displeji (5 s, pak se vrátí UI),
+`A:` nastaví akcentní barvu, `F:<znak>` blikne odznakem klávesy,
+`?` vyžádá `VER:<n>`, `M:<12 znaku>` přemapuje matici v pořadí skenování
+(uloženo v NVS, přežije restart) — používá se, když jsou řádky/sloupce
+fyzicky přehozené a nechceš přepojovat kabely,
+`W:` přenáší **design frame** (tapeta + statická grafika vyrenderovaná v PC
+appce, `design_frame.py`) po blocích 768 B s potvrzením `WP:ACK` (ACK-driven,
+žádné přetečení 2kB UART bufferu). Firmware si po `WP:OK` už sám nekreslí
+hlavičku ani popisky, jen dirty rects s hodnotami — displej je pixelově
+shodný s náhledem v aplikaci.
 
 ### Význam akcí `MACRO:<akce>` (patří k PC host app)
 | Akce | Co s tím udělá PC host |
@@ -48,12 +73,11 @@ a mění hlasitost PC. `ENC1_SW:1` = přepnutí módu host app.
 
 ## 3. Mapování kláves
 
-Klávesy:
+Klávesy (matice 3×4):
 ```
-1 2 3
-4 5 6
-7 8 9
-* 0 #
+1 2 3 4
+5 6 7 8
+9 * 0 #
 ```
 
 ### Profil 1 - EDIT
@@ -82,7 +106,7 @@ Klávesy:
 
 ## 4. Displej - přepínač panelu
 
-V `src/main.cpp`:
+V `firmware/src/main.cpp`:
 
 ```cpp
 #define PANEL_76X284 1   // vždy 1: simulace i reál PANEL jsou teď 76x284 (284x76 landscape)
@@ -107,7 +131,7 @@ pio run -t upload
 ```
 
 Build výstupy jdou do `C:/Temp/keypad_build` (kvůli diakritice v cestě).
-Aby je Wokwi našel "ve workspace", je v projektu junction `wokwi_build`
+Aby je Wokwi našel "ve workspace", je ve slozce firmware/ junction `wokwi_build` (uvnitr firmware/)
 odkazující na `C:/Temp/keypad_build`. V `wokwi.toml` jsou proto relativní cesty:
 ```toml
 firmware = 'wokwi_build/upesy_wroom/firmware.bin'
@@ -115,13 +139,13 @@ elf = 'wokwi_build/upesy_wroom/firmware.elf'
 ```
 Pokud junction smažeš nebo přesuneš projekt, vytvoř ho znovu:
 ```powershell
-cmd /c mklink /J "<projekt>\wokwi_build" "C:\Temp\keypad_build"
+cmd /c mklink /J "<projekt>\firmware\wokwi_build" "C:\Temp\keypad_build"
 ```
 
 ## 6. Test ve Wokwi (simulace)
 
 1. Ujisti se, že firmware je nabuildovaný (`pio run`) a v projektu existuje
-   junction `wokwi_build` -> `C:\Temp\keypad_build` (viz sekce 5).
+   junction `wokwi_build` (uvnitr firmware/) -> `C:\Temp\keypad_build` (viz sekce 5).
 2. Ujisti se, že v `diagram.json` jsou propojené sériové piny:
    ```json
    [ "esp:TX", "$serialMonitor:RX", "", [] ],
@@ -133,8 +157,8 @@ cmd /c mklink /J "<projekt>\wokwi_build" "C:\Temp\keypad_build"
 4. Otevři Serial Monitor / terminál na **115200 baud**.
 5. Po startu musí přijít:
    ```
-   === MACRO KEYPAD FIRMWARE ===
-   ESP32 DevKit v1 | ST7789 | 4x3 Keypad | 2x Encoders
+   === FINTR DECK FIRMWARE ===
+   ESP32 DevKit v1 | ST7789 | 3x4 Keypad | 2x Encoders
    --- READY ---
    Panel: 284x76
    PROFILE:1:EDIT
@@ -173,9 +197,9 @@ displeje postavený na Wokwi Chips API:
 
 | Soubor                          | Obsah                                    |
 |---------------------------------|------------------------------------------|
-| `chips/st7789.chip.c`           | zdrojový kód chipu (SPI + framebuffer)   |
-| `chips/st7789.chip.json`        | popis chipu: piny + `display` 284x76     |
-| `chips/st7789.chip.wasm`        | zkompilovaný WASM binární obraz          |
+| `firmware/chips/st7789.chip.c`           | zdrojový kód chipu (SPI + framebuffer)   |
+| `firmware/chips/st7789.chip.json`        | popis chipu: piny + `display` 284x76     |
+| `firmware/chips/st7789.chip.wasm`        | zkompilovaný WASM binární obraz          |
 | `chips/wokwi-api.h`             | oficiální Wokwi API hlavička             |
 
 Charakteristika simulačního panelu:
@@ -187,7 +211,7 @@ Charakteristika simulačního panelu:
 
 Rebuild WASM po úpravě chipu:
 ```powershell
-& "$env:TEMP\opencode\wokwi\wokwi-cli.exe" chip compile chips/st7789.chip.c -o chips/st7789.chip.wasm
+& "$env:TEMP\opencode\wokwi\wokwi-cli.exe" chip compile firmware/chips/st7789.chip.c -o firmware/chips/st7789.chip.wasm
 ```
 (První spuštění si stáhne WASI-SDK do `~/.wokwi`, na další je to okamžité.)
 
@@ -196,7 +220,7 @@ Debug chipu: `printf()` ze `st7789.chip.c` se objeví v záložce
 
 ### 6.2 Orientace displeje
 Firmware je pevně na `setRotation(1)`. Pokud by byl obraz v simulaci
-zrcadlený/vzhůru nohama, změň v `src/main.cpp` v `initDisplay()` na
+zrcadlený/vzhůru nohama, změň v `firmware/src/main.cpp` v `initDisplay()` na
 `tft.setRotation(3)` a přebilduj. (Chip podporuje MX/MY/MV, takže mezi
 rotacemi 0..3 jen jedna bude vypadat upřímně pro tvoje U.)
 
@@ -205,7 +229,7 @@ Wokwi pushbutton má piny `1.l`, `1.r`, `2.l`, `2.r` (ne `1in`/`2in`).
 V `diagram.json` musí být řádek na `1.l` a sloupec na `2.l`.
 
 ### Když enkodér skáče dvakrát
-Nastav v `src/main.cpp`:
+Nastav v `firmware/src/main.cpp`:
 ```cpp
 #define ENC_STEPS_PER_DETENT 2
 ```
@@ -217,27 +241,41 @@ Prohoď `CLK` a `DT` v definicích `E1_*` / `E2_*` (nebo v `diagram.json`).
 
 1. Reálný panel je teď stejný jako simulace (76x284). Zjisti, že `PANEL_76X284 1`.
 2. Zkontroluj zapojení podle tabulky v projektu (3.3 V, GND, SPI, matice, enkodéry).
-3. Připoj ESP32 přes USB.
+3. Připoj ESP32 přes USB (`pio device list` → COM7 = CH9102).
 4. Nahraj firmware:
    ```powershell
-   pio run -t upload
+   pio run -t upload --upload-port COM7
    ```
 5. Otevři terminál:
    ```powershell
    pio device monitor -b 115200
    ```
-6. Očekávané výstupy jsou stejné jako v simulaci.
-7. Zkontroluj displej:
-   - pokud je obraz posunutý/rozřezaný, zkus `tft.setRotation(3)` nebo uprav `PANEL_W`/`PANEL_H`.
-   - podsvícení je na GPIO17 (`TFT_BL`), v kódu se nastavuje na HIGH.
+6. Očekávané výstupy: `VER:3`, `Pins: ...`, `Matrix rows 15/2/19, cols 22/12/13/21`, `--- READY ---`.
+7. Rychlá kontrola:
+   - `?` → `VER:3`
+   - `K` → 3 skupiny po 4 bitech (0 = stisknutá klávesa)
+   - `P:2` → `PROFILE:2:MEDIA`
+   - v appce klikni na tapetu → v logu `WP:BEGIN/ACK/OK` (přenos ~5,5 s)
+8. Displej:
+   - design posílá PC app (`design_frame.py`); pokud zůstává starý obraz, appka
+     není připojená nebo doběhl přenos tapety (`WP:OK`).
+   - podsvícení je na GPIO17, **active LOW** (`LOW` = svítí).
 
 ## 8. Časté problémy
 
+- **Po nahrání se displej nezměnil / klávesy spouští jinou akci** = na desce běží
+  starý firmware. Poznáš to podle banneru (`4x3 Keypad` = starý, `3x4` + `VER:3` = nový).
+  Zavři Fintr Deck (drží COM port) a nahraj znovu.
+- **Firmware se zasekne hned po banneru** = vnořené `tft.startWrite()/endWrite()`
+  kolem `drawRGBBitmap()` zablokuje SPI transakci. Dirty rects se proto blittují
+  bez obalové transakce (viz `blitCanvas()` v `firmware/src/main.cpp`).
+- **Tapeta se nepošle, v logu `timeout`** = firmware < 3 neumí `WP:ACK`; nahraj
+  aktuální build. App posílá `?` a verzi si zapíše do logu.
 - **`Wokwi: diagram.json ... is not valid JSON`** = soubor měl UTF-8 **BOM**
-  na začátku. `diagram.json`, `wokwi.toml` a všechny `chips/*.json` musí být
+  na začátku. `diagram.json`, `wokwi.toml` a všechny `firmware/chips/*.json` musí být
   bez BOM. Ošetřeno; kdyby se vrátilo, ulož soubor bez BOM.
 - **Link error `cannot open map file ...`** = cesta s diakritikou. Řeší `build_dir` v `platformio.ini`.
-- **`firmware.bin not found in workspace`** = `wokwi.toml` musí mít relativní cestu a firmware musí být dostupný přes junction `wokwi_build` (viz sekce 5).
+- **`firmware.bin not found in workspace`** = `wokwi.toml` musí mít relativní cestu a firmware musí být dostupný přes junction `wokwi_build` (uvnitr firmware/) (viz sekce 5).
 - **`UnknownPackageError`** = špatný název knihovny v `lib_deps`; používej registry názvy (`chris--a/Keypad`).
 - **Nic v terminálu** = chybí propojení `$serialMonitor` v `diagram.json` nebo špatný baud (115200).
 - **Displej bílý/černý v simulaci** = čip se nepovedl: spusť simulaci, ve
@@ -251,7 +289,7 @@ Prohoď `CLK` a `DT` v definicích `E1_*` / `E2_*` (nebo v `diagram.json`).
   něm neaplikuje (rotace 1: MADCTL 0xA0 = MY|MV). Opraveno v `put_pixel()`.
 - **Displej posunutý/zrcadlený** = zkuste rotaci 1 vs 3 v `initDisplay()` (sekce 6.2).
 
-## 9. PC host app (pc\KeypadHost.ps1)
+## 9. PC host app (pc_app\legacy\KeypadHost.ps1)
 
 PC aplikace, která čte výstup zařízení (COM port, 115200) a vykonává akce na PC:
 
@@ -265,8 +303,8 @@ PC aplikace, která čte výstup zařízení (COM port, 115200) a vykonává akc
 
 Spuštění:
 ```powershell
-powershell -ExecutionPolicy Bypass -File pc\KeypadHost.ps1 -Port COM5 -Baud 115200
-powershell -ExecutionPolicy Bypass -File pc\KeypadHost.ps1 -Port COM5 -DryRun   # jen loguje, nespouští
+powershell -ExecutionPolicy Bypass -File pc_app\legacy\KeypadHost.ps1 -Port COM5 -Baud 115200
+powershell -ExecutionPolicy Bypass -File pc_app\legacy\KeypadHost.ps1 -Port COM5 -DryRun   # jen loguje, nespouští
 ```
 
 Poznámka: ve Wokwi simulace host app zafunguje až s reálným zařízením
@@ -280,29 +318,29 @@ Wokwi serial nelze napojit na COM port, ale host app může vykonávat
 **tytéž řádky protokolu**, které sim vypisuje:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File pc\KeypadHost.ps1 -Sim
+powershell -ExecutionPolicy Bypass -File pc_app\legacy\KeypadHost.ps1 -Sim
 ```
 → interaktivně zadej řádky (`MACRO:app:spotify`, `ENC1:3`, `ENC1_SW:1`, ...)
 → Spotify se otevře, hlasitost se změní, mute přepne.
 
-Přehrání celé sekvence (soubor `pc\test-actions.txt`):
+Přehrání celé sekvence (soubor `pc_app\legacy\test-actions.txt`):
 ```powershell
-powershell -ExecutionPolicy Bypass -File pc\KeypadHost.ps1 -Sim -ReplayFile pc\test-actions.txt
+powershell -ExecutionPolicy Bypass -File pc_app\legacy\KeypadHost.ps1 -Sim -ReplayFile pc_app\legacy\test-actions.txt
 ```
 Sekvence: spustí Spotify, hlasitost +2 kroky, -2 kroky, mute on, mute off
 (síťový efekt na hlasitost = nula). `+ `-DryRun` jen loguje bez akcí.
 
-## 10. PC aplikace v2 (pc\KeypadApp) - Python + PySide6
+## 10. PC aplikace v2 (pc_app) - Python + PySide6
 
 Nová GUI aplikace, která nahrazuje PS1 skript pro reálné používání (PS1 zůstává
 jako sim/replay nástroj). Python 3.14 + PySide6 + pyserial + pycaw (audio).
 
 ### 10.1 Instalace a spuštění
 ```powershell
-python -m pip install -r pc\KeypadApp\requirements.txt
-python pc\KeypadApp\main.py                    # auto-detekce portu + auto-connect
-python pc\KeypadApp\main.py --port COM5        # vynuti konkretni port
-python pc\KeypadApp\main.py --port COM5 --dry-run   # jen loguje akce
+python -m pip install -r pc_app\requirements.txt
+python pc_app\main.py                    # auto-detekce portu + auto-connect
+python pc_app\main.py --port COM5        # vynuti konkretni port
+python pc_app\main.py --port COM5 --dry-run   # jen loguje akce
 ```
 Připojení: aplikace nejdřív zkusí poslední použitý port (`last_port`
 v `bindings.json`), pak auto-detekci podle VID/PID USB-serial čipu
@@ -312,13 +350,15 @@ v `bindings.json`), pak auto-detekci podle VID/PID USB-serial čipu
 | Soubor | Obsah |
 |--------|-------|
 | `main.py` | vstup, QApplication, tray ikona |
-| `window.py` | hlavní okno: connect bar, 3 profily, 4x3 grid editor, log |
+| `window.py` | hlavní okno: connect bar, 3 profily, 3x4 grid editor, log |
 | `sim_panel.py` | simulace 12 tlačítek + 2 enkodérů (bez HW) |
 | `serial_link.py` | pyserial vlákno, auto-reconnect, tx/rx, auto-detekce portu |
 | `protocol.py` | parsování řádků protokolu + buildery příkazů |
 | `config.py` | load/save `bindings.json`, defaulty, summary |
 | `actions.py` | akční engine (ctypes user32): app launch/focus, hotkey, media, text |
 | `audio.py` | Windows Core Audio (pycaw): master + per-app hlasitost/mute |
+| `design_frame.py` | statický design displeje 284×76 (tapeta + chrome) → RGB565 pro `W:` |
+| `tour.py` | interaktivní průvodce: spotlight overlay + karta, 6 kroků |
 | `bindings.json` | konfigurace bindings (vytvoří se automaticky) |
 
 Princip: **firmware posílá eventy (`KEY:`, `ENC:`), PC aplikace vlastní bindingy**
@@ -358,7 +398,7 @@ Pro URI scheme se proces odhaduje (`spotify:` -> `Spotify.exe`) nebo lze
 nastavit explicitně polem `process`.
 
 ### 10.4 Testování bez tlačítek (sim panel)
-Vpravo je panel **Simulace**: klikací 4x3 klávesy a `-`/`+`/`SW` pro oba
+Vpravo je panel **Simulace**: klikací 3x4 klávesy a `-`/`+`/`SW` pro oba
 enkodéry. Eventy jdou přes stejný handler jako reálný serial, takže bindings
 lze testovat i bez fyzických tlačítek. Reálný displej + enkodéry fungují
 současně (přes COM port).
@@ -393,3 +433,34 @@ hlasitostních kláves):
 Bluetooth/ACPI porty se ignorují. `detect_port()` vrací nejlepší kandidát.
 Aplikace při startu zkusí `last_port`, potom detekci, a když nic nenajde,
 jen zaloguje dostupné porty.
+
+### 10.8 Interaktivní průvodce (`tour.py`)
+- `TourOverlay` je dítě hlavního okna, takže pokrývá celé okno a kreslí se
+  v aktuální Theme. Podklad ztmaví na `rgba(0,0,0,0.75)` a výřez (jeden nebo
+  víc obdélníků) nechá neztmavený; kolem je accent rámeček + glow.
+- Karta (`#141419`) obsahuje `Krok N z 6`, nadpis, český popis a tlačítka
+  `Další`/`Dokončit` + `Přeskočit`; pozicuje se automaticky vpravo/vlevo/
+  pod/nad výřezem a vždy zůstane uvnitř okna.
+- Ovládání: klik na tlačítka, `Enter`/`Mezerník` = další, `Esc` = přeskočit.
+  Animace ~280 ms (`QVariantAnimation`, `OutCubic`), žádné blokování sériové linky.
+- Kroky (cíle jsou reálné widgety): 1 displej + přepínač Zařízení/Tapety,
+  2 matice 12 tlačítek, 3 E1+E2, 4 App Library, 5 profily + editor,
+  6 **Tapety** (přepne záložku, klik = odeslání na displej),
+  7 stavová lišta, 8 **Nastavení (podprůvodce)**, 9 Hotovo.
+- Podprůvodce Nastavení je vlastní `TourOverlay` nad dialogem (6 kroků:
+  Připojení, Režimy, Audio, E2, Theme, Průvodce/kalibrace); dokončením se
+  vrátí do hlavního průvodce.
+- Stav: `bindings.json → tour_completed` (default `false`). Automaticky se
+  spustí při prvním zobrazení okna; `Přeskočit` i `Dokončit` ho nastaví na
+  `true`. Znovu se dá spustit v `Nastavení → Průvodce aplikací`.
+  Při ručním spuštění se stav nemění; po dokončení se opět uloží `true`.
+
+### 10.9 Kalibrace kláves (`calibration_wizard.py`)
+- Fyzické zapojení matice nemusí odpovídat pořadí pinů – wizard naučí appku,
+  která fyzická klávesa je která, bez přepojování a bez dalšího flashe.
+- Průběh: wizard rozsvítí dlaždici → uživatel stiskne fyzickou klávesu →
+  firmware pošle `KEY:<crosspoint>` → wizard pošle `G:<crosspoint><cíl>`
+  (firmware přemapuje a uloží do NVS). Po 12 krocích následuje **Test**
+  (odškrtávání) – tím se odhalí i mrtvé řádky/sloupce nebo zkraty.
+- Spuštění: `Nastavení → Kalibrace kláves`. Stejná funkce je v průvodci
+  (podprůvodce Nastavení). `?` (připojení appky) kalibraci vždy ukončí.

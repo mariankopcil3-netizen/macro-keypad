@@ -1,4 +1,4 @@
-"""Deep-black + neon-purple theme for KeypadApp (Fusion + QSS)."""
+"""Deep-black + neon-purple theme for Fintr Deck (Fusion + QSS)."""
 
 from PySide6.QtGui import QColor, QFont, QFontDatabase
 
@@ -76,6 +76,9 @@ QFrame#inner {
     background: %(surface2)s;
     border: 1px solid %(border)s;
     border-radius: 10px;
+}
+QFrame#inner[dropHover="true"] {
+    border: 1px solid %(accent)s;
 }
 QFrame#pill {
     background: %(surface2)s;

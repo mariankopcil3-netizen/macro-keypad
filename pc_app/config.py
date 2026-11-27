@@ -52,12 +52,13 @@ def _none():
 
 
 DEFAULT_CONFIG = {
-    "version": 1,
+    "version": 2,
     "baud": DEFAULT_BAUD,
     "last_port": "",
     "accent": "#A855F7",
     "terminal_visible": False,
     "show_unknown_sources": False,
+    "tour_completed": False,
     "audio": {
         "volume_step": 2,
         "target_app": "Spotify.exe",
@@ -65,6 +66,10 @@ DEFAULT_CONFIG = {
     "encoder": {
         "e2_mode": "app_volume",
         "e2_combo": "Ctrl+Shift+M",
+        "e2_target": "",
+        "e2_hotkey_left": "",
+        "e2_hotkey_right": "",
+        "e2_hotkey_switch": "",
     },
     "profiles": [
         {
@@ -131,6 +136,7 @@ def _normalize(cfg):
     if not isinstance(cfg, dict):
         return default_config()
     cfg.setdefault("version", 1)
+    cfg["version"] = 2
     cfg.setdefault("baud", DEFAULT_BAUD)
     cfg.setdefault("last_port", "")
     accent = cfg.get("accent")
@@ -140,6 +146,7 @@ def _normalize(cfg):
         cfg["accent"] = accent.lower()
     cfg["terminal_visible"] = bool(cfg.get("terminal_visible", False))
     cfg["show_unknown_sources"] = bool(cfg.get("show_unknown_sources", False))
+    cfg["tour_completed"] = bool(cfg.get("tour_completed", False))
     audio = cfg.get("audio")
     if not isinstance(audio, dict):
         cfg["audio"] = copy.deepcopy(DEFAULT_CONFIG["audio"])
@@ -153,6 +160,10 @@ def _normalize(cfg):
     else:
         encoder.setdefault("e2_mode", DEFAULT_CONFIG["encoder"]["e2_mode"])
         encoder.setdefault("e2_combo", DEFAULT_CONFIG["encoder"]["e2_combo"])
+        encoder.setdefault("e2_target", "")
+        encoder.setdefault("e2_hotkey_left", "")
+        encoder.setdefault("e2_hotkey_right", "")
+        encoder.setdefault("e2_hotkey_switch", "")
     if encoder.get("e2_mode") not in ("app_volume", "scroll", "zoom", "hotkey"):
         encoder["e2_mode"] = DEFAULT_CONFIG["encoder"]["e2_mode"]
     profiles = cfg.get("profiles")
@@ -173,7 +184,9 @@ def _normalize(cfg):
         if not isinstance(keys, dict):
             profile["keys"] = {}
         for ch in "123456789*0#":
-            keys.setdefault(ch, _none())
+            if ch not in keys:
+                keys[ch] = copy.deepcopy(
+                    defaults[min(idx, len(defaults) - 1)]["keys"].get(ch, _none()))
     return cfg
 
 

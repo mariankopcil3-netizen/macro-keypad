@@ -1,0 +1,70 @@
+{
+  "version": 2,
+  "baud": 115200,
+  "accent": "#A855F7",
+  "terminal_visible": false,
+  "show_unknown_sources": false,
+  "tour_completed": false,
+  "audio": { "volume_step": 2, "target_app": "Spotify.exe" },
+  "encoder": {
+    "e2_mode": "app_volume",
+    "e2_combo": "Ctrl+Shift+M",
+    "e2_target": "",
+    "e2_hotkey_left": "",
+    "e2_hotkey_right": "",
+    "e2_hotkey_switch": ""
+  },
+  "profiles": [
+    {
+      "name": "EDIT",
+      "keys": {
+        "1": { "type": "app", "target": "spotify:", "mode": "auto" },
+        "2": { "type": "hotkey", "combo": "Ctrl+Y" },
+        "3": { "type": "hotkey", "combo": "Ctrl+S" },
+        "4": { "type": "hotkey", "combo": "Ctrl+C" },
+        "5": { "type": "hotkey", "combo": "Ctrl+X" },
+        "6": { "type": "hotkey", "combo": "Ctrl+V" },
+        "7": { "type": "hotkey", "combo": "Ctrl+F" },
+        "8": { "type": "hotkey", "combo": "Ctrl+H" },
+        "9": { "type": "hotkey", "combo": "Ctrl+A" },
+        "*": { "type": "hotkey", "combo": "Alt+F4" },
+        "0": { "type": "hotkey", "combo": "Delete" },
+        "#": { "type": "hotkey", "combo": "Enter" }
+      }
+    },
+    {
+      "name": "MEDIA",
+      "keys": {
+        "1": { "type": "media", "code": "play_pause" },
+        "2": { "type": "media", "code": "stop" },
+        "3": { "type": "media", "code": "next" },
+        "4": { "type": "media", "code": "prev" },
+        "5": { "type": "media", "code": "vol_up" },
+        "6": { "type": "media", "code": "vol_down" },
+        "7": { "type": "media", "code": "mute" },
+        "8": { "type": "hotkey", "combo": "Ctrl+Left" },
+        "9": { "type": "hotkey", "combo": "Ctrl+Right" },
+        "*": { "type": "hotkey", "combo": "F11" },
+        "0": { "type": "hotkey", "combo": "V" },
+        "#": { "type": "hotkey", "combo": "Shift+S" }
+      }
+    },
+    {
+      "name": "CODE",
+      "keys": {
+        "1": { "type": "hotkey", "combo": "Ctrl+Shift+B" },
+        "2": { "type": "hotkey", "combo": "F5" },
+        "3": { "type": "hotkey", "combo": "F5" },
+        "4": { "type": "hotkey", "combo": "F10" },
+        "5": { "type": "hotkey", "combo": "F11" },
+        "6": { "type": "hotkey", "combo": "Shift+F11" },
+        "7": { "type": "hotkey", "combo": "F9" },
+        "8": { "type": "hotkey", "combo": "F5" },
+        "9": { "type": "hotkey", "combo": "Shift+F5" },
+        "*": { "type": "hotkey", "combo": "Ctrl+`" },
+        "0": { "type": "hotkey", "combo": "Shift+Alt+F" },
+        "#": { "type": "hotkey", "combo": "Ctrl+Enter" }
+      }
+    }
+  ]
+}

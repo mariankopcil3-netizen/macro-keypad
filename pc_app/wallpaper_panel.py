@@ -113,7 +113,7 @@ class WallpaperPanel(QWidget):
             button.setFixedSize(232, 64)
             button.setIconSize(QSize(THUMB_W, THUMB_H))
             button.setStyleSheet(self._thumb_style(False))
-            button.clicked.connect(lambda _=False, i=index: self._select(i))
+            button.clicked.connect(lambda _=False, i=index: self._activate(i))
             self.grid.addWidget(button, index // columns, index % columns)
             self._buttons.append(button)
 
@@ -142,6 +142,12 @@ class WallpaperPanel(QWidget):
             " QPushButton:hover { border: 1px solid %s; }"
             % (border, background, theme.MUTED, theme.ACCENT_SOFT)
         )
+
+    def _activate(self, index):
+        """Click on a thumbnail = apply locally + push to the device."""
+        self._select(index)
+        if self._selected is not None and self._raw:
+            self.applied.emit(self._selected, self._raw)
 
     def _select(self, index):
         if not 0 <= index < len(self._entries):

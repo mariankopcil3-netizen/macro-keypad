@@ -7,14 +7,15 @@ modern Linear/Raycast style surface instead of native Windows controls.
 
 import json
 
-from PySide6.QtCore import (QEasingCurve, QPointF, QRectF, QSize, Qt,
-                            QVariantAnimation, Signal)
+from PySide6.QtCore import (QEasingCurve, QElapsedTimer, QPointF, QRectF, QSize,
+                            Qt, QTimer, QVariantAnimation, Signal)
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QIcon, QLinearGradient,
                            QPainter, QPainterPath, QPen, QPixmap,
                            QRadialGradient)
-from PySide6.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QGridLayout,
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton,
-                               QSizePolicy, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFrame, QGraphicsDropShadowEffect,
+                               QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+                               QPushButton, QSizePolicy, QStackedWidget,
+                               QVBoxLayout, QWidget)
 
 import theme
 from protocol import KEY_MATRIX
@@ -23,7 +24,9 @@ SCALE = 2
 PANEL_W = 284
 PANEL_H = 76
 MIME_ENTRY = "application/x-keypad-entry"
-FLASH_MS = 220
+FLASH_MS = 220          # on-device badge pulse mirror in the display preview
+KEY_FLASH_MS = 2000     # key tile highlight: 2 s smooth fade-out
+KEY_FLASH_FPS = 30
 
 
 def prettify(text):
@@ -68,11 +71,11 @@ class KeyButton(QPushButton):
         self._glow.setEnabled(False)
         self.setGraphicsEffect(self._glow)
 
-        self._flash_anim = QVariantAnimation(self)
-        self._flash_anim.setDuration(220)
-        self._flash_anim.setEasingCurve(QEasingCurve.OutCubic)
-        self._flash_anim.valueChanged.connect(self._on_flash_anim)
-        self._flash_anim.finished.connect(self._flash_done)
+        self._flash_anim = QTimer(self)
+        self._flash_anim.setInterval(max(1, 1000 // KEY_FLASH_FPS))
+        self._flash_anim.timeout.connect(self._on_flash_tick)
+        self._flash_clock = QElapsedTimer()
+        self._flash_clock.start()
 
         self._hover_level = 0.0
         self._hover_anim = QVariantAnimation(self)
@@ -147,17 +150,26 @@ class KeyButton(QPushButton):
         self.update()
 
     def flash(self):
+        """Bright hit, then a smooth 2 s fade back to the idle state."""
         self._flash = True
-        self._flash_anim.stop()
-        self._flash_anim.setStartValue(1.0)
-        self._flash_anim.setEndValue(0.0)
+        self._flash_level = 1.0
+        self._flash_clock.restart()
         self._on_flash_anim(1.0)
-        self._flash_anim.start()
+        if not self._flash_anim.isActive():
+            self._flash_anim.start()
+
+    def _on_flash_tick(self):
+        t = min(1.0, self._flash_clock.elapsed() / float(KEY_FLASH_MS))
+        eased = t * t * (3.0 - 2.0 * t)          # smooth in-out
+        self._on_flash_anim(1.0 - eased)
+        if t >= 1.0:
+            self._flash_anim.stop()
+            self._flash_done()
 
     def _on_flash_anim(self, value):
         self._flash_level = max(0.0, min(1.0, float(value)))
         glow = QColor(theme.ACCENT)
-        glow.setAlpha(int(150 * self._flash_level))
+        glow.setAlpha(int(180 * self._flash_level))
         self._glow.setColor(glow)
         self._glow.setEnabled(self._flash_level > 0.01)
         self.update()
@@ -206,8 +218,8 @@ class KeyButton(QPushButton):
             bottom = _mix(bottom, QColor("#1A1A22"), hover_level)
         if self._flash:
             level = self._flash_level
-            top = _mix(top, accent, 0.34 * level)
-            bottom = _mix(bottom, accent, 0.16 * level)
+            top = _mix(top, accent, 0.52 * level)
+            bottom = _mix(bottom, accent, 0.22 * level)
 
         gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         gradient.setColorAt(0.0, top)
@@ -219,7 +231,7 @@ class KeyButton(QPushButton):
         elif self._flash and self._flash_level > 0.01:
             flash_pen = QColor(accent)
             flash_pen.setAlpha(int(70 + 185 * self._flash_level))
-            pen = QPen(flash_pen, 1.0 + 0.8 * self._flash_level)
+            pen = QPen(flash_pen, 1.0 + 1.3 * self._flash_level)
         elif hover_level > 0.001:
             border = _mix(QColor("#2A2A33"), QColor(theme.BORDER2), hover_level)
             pen = QPen(border, 1.0)
@@ -258,7 +270,7 @@ class KeypadGrid(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setAcceptDrops(True)
-        self.setMaximumHeight(360)
+        self.setMaximumHeight(420)
         grid = QGridLayout(self)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(8)
@@ -477,7 +489,7 @@ class DisplayPreview(QWidget):
 
         painter.setFont(self._font(8, True))
         painter.setPen(QColor("#EDE9FE"))
-        painter.drawText(11, 11, "MACRO KEYPAD")
+        painter.drawText(11, 11, "FINTR DECK")
 
         status_color = QColor(theme.OK if self.live else theme.DIM)
         status_text = "LIVE" if self.live else "OFFLINE"
@@ -575,7 +587,7 @@ class DisplayPreview(QWidget):
 
         painter.setFont(self._font(7, True))
         painter.setPen(QColor(theme.ACCENT_SOFT))
-        painter.drawText(QRectF(PANEL_W / 2 - 30, 56, 60, 8),
+        painter.drawText(QRectF(PANEL_W / 2 - 30, 52, 60, 8),
                          Qt.AlignHCenter | Qt.AlignVCenter, "MODE")
 
         mode_glow_color = QColor(accent)
@@ -589,7 +601,7 @@ class DisplayPreview(QWidget):
 
         painter.setFont(self._font(13, True))
         painter.setPen(QColor(theme.ACCENT))
-        painter.drawText(QRectF(PANEL_W / 2 - 50, 63, 100, 12),
+        painter.drawText(QRectF(PANEL_W / 2 - 50, 61, 100, 14),
                          Qt.AlignCenter, self.profile)
 
         level = self._flash_level
@@ -785,8 +797,10 @@ class AudioPill(QFrame):
 class EncoderCard(QFrame):
     step = Signal(int)
     switch = Signal()
+    entry_dropped = Signal(object)
 
-    def __init__(self, enc_id, title, parent=None):
+    def __init__(self, enc_id, title, parent=None, tabs=None,
+                 accept_drops=False):
         super().__init__(parent)
         self.enc_id = enc_id
         self.setObjectName("inner")
@@ -799,11 +813,29 @@ class EncoderCard(QFrame):
         top.setSpacing(6)
         self.title_label = QLabel(theme.caption(title))
         top.addWidget(self.title_label)
+        self._tabs = None
+        if tabs:
+            self._tabs = SegmentedControl()
+            self._tabs.set_names(tabs, 0)
+            self._tabs.changed.connect(self._on_tab)
+            top.addWidget(self._tabs)
         top.addStretch(1)
         self.pos_label = QLabel("pos 0")
         self.pos_label.setStyleSheet("color: %s; font-size: 10px;" % theme.DIM)
         top.addWidget(self.pos_label)
         layout.addLayout(top)
+
+        body = QWidget()
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(8)
+
+        self.target_label = QLabel("")
+        self.target_label.setStyleSheet(
+            "color: %s; font-size: 10px;" % theme.MUTED)
+        self.target_label.setWordWrap(True)
+        self.target_label.hide()
+        body_layout.addWidget(self.target_label)
 
         row = QHBoxLayout()
         row.setSpacing(8)
@@ -814,10 +846,10 @@ class EncoderCard(QFrame):
         self.state_label.setStyleSheet("color: %s; font-size: 11px;" % theme.DIM)
         row.addWidget(self.state_label, 0, Qt.AlignBottom)
         row.addStretch(1)
-        layout.addLayout(row)
+        body_layout.addLayout(row)
 
         self.bar = VolumeBar()
-        layout.addWidget(self.bar)
+        body_layout.addWidget(self.bar)
 
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
@@ -837,8 +869,63 @@ class EncoderCard(QFrame):
         self.mute_btn.setFixedSize(54, 26)
         self.mute_btn.clicked.connect(self.switch.emit)
         bottom.addWidget(self.mute_btn)
-        layout.addLayout(bottom)
+        body_layout.addLayout(bottom)
         self._last_percent = None
+
+        if self._tabs is not None:
+            self._stack = QStackedWidget(self)
+            self._stack.addWidget(body)
+            layout.addWidget(self._stack)
+        else:
+            self._stack = None
+            layout.addWidget(body)
+
+        if accept_drops:
+            self.setAcceptDrops(True)
+
+    # ---- tabs ----------------------------------------------------------
+    def _on_tab(self, index):
+        if self._stack is not None:
+            self._stack.setCurrentIndex(index)
+
+    def set_config_page(self, widget):
+        """Add the second tab page (configuration form)."""
+        if self._stack is None:
+            return
+        self._stack.addWidget(widget)
+
+    def set_target(self, text):
+        """Subtitle under the title: controlled app / function."""
+        self.target_label.setText(text or "")
+        self.target_label.setVisible(bool(text))
+
+    # ---- drag & drop (App library entry) --------------------------------
+    def _set_drop_hover(self, on):
+        if bool(self.property("dropHover")) == bool(on):
+            return
+        self.setProperty("dropHover", bool(on))
+        self.style().unpolish(self)
+        self.style().polish(self)
+
+    def dragEnterEvent(self, event):  # noqa: N802 - Qt naming
+        if event.mimeData().hasFormat(MIME_ENTRY):
+            self._set_drop_hover(True)
+            event.acceptProposedAction()
+
+    def dragLeaveEvent(self, event):  # noqa: N802 - Qt naming
+        self._set_drop_hover(False)
+
+    def dropEvent(self, event):  # noqa: N802 - Qt naming
+        self._set_drop_hover(False)
+        if not event.mimeData().hasFormat(MIME_ENTRY):
+            return
+        try:
+            payload = json.loads(
+                bytes(event.mimeData().data(MIME_ENTRY)).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return
+        self.entry_dropped.emit(payload)
+        event.acceptProposedAction()
 
     def set_position(self, pos):
         previous = getattr(self, "_last_pos", None)

@@ -1,133 +1,166 @@
-# Macro Keypad
+# Fintr Deck
 
-A DIY macro keypad (Stream Deck-style) built around an ESP32: a 4×3 key matrix, two EC11 rotary
-encoders and a 2.25" ST7789 strip display (76×284), paired with a PC companion app written in
-Python + PySide6. Keys are remappable from the GUI — no reflashing required.
+DIY makro keypad ve stylu Stream Deck — 12 mechanických kláves, dvojice
+rotačních enkodérů, širokoúhlý IPS displej a desktopová konzole s přehledným
+tmavým designem. Klávesy se přemapovávají v aplikaci tažením — bez
+přeflashování firmwaru.
 
-**Status:** firmware and PC app are complete and tested in simulation (including a custom Wokwi
-display chip). Hardware bring-up in progress.
+**Firmware** jede na ESP32 (Arduino / PlatformIO), **konzole** je napsaná v
+Pythonu (PySide6). Hloubka displeje, tapety a telemetrie se přenáší po USB.
 
-## Screenshots
+> 💡 *Demo video (průvodce aplikací + reálné ovládání) přidám do
+> `docs/demo.mp4` — dokud chybí, mrkni na screenshoty níže.*
 
-PC companion app — live device preview, key binding grid, app library and action editor (UI is currently Czech):
+![Fintr Deck — PC konzole](docs/images/app-main.png)
 
-![Macro Keypad PC app](docs/images/app-main.png)
+Interaktivní průvodce (spustí se sám při prvním spuštění, znovu v Nastavení):
 
-## Features
+![Fintr Deck — interaktivní průvodce](docs/images/app-tour.png)
 
-**Firmware** (`src/main.cpp`, PlatformIO, ESP32 + Arduino framework)
-- 12-key 4×3 matrix + 2 EC11 encoders with quadrature decoding and debounce
-- Everything non-blocking (`millis()` based)
-- ST7789 display shows the active profile, page names and live telemetry
-- 3 profiles (EDIT / MEDIA / CODE), switchable from the PC
-- Simple line-based serial protocol @ 115200 baud
+## Funkce
 
-**PC companion app** (`pc/KeypadApp`)
-- GUI profile editor — rebind any key to an action without touching the firmware
-- Action types: launch/focus app, hotkey, media key, type text, switch page
-- Windows Core Audio integration (pycaw): encoder 1 = master volume/mute,
-  encoder 2 = volume/mute of a chosen app, with the same percentages as the system mixer
-- Telemetry (CPU / GPU / temperature) sent to the device display
-- COM port auto-detection by USB VID/PID (CP210x, CH340, FTDI, Espressif), auto-reconnect
-- Built-in simulation panel — click virtual keys/encoders to test bindings without hardware
+### 12 mechanických kláves (matice 4×3)
+- **Spouštění aplikací** — automatická detekce nainstalovaných programů
+  ve Windows včetně extrakce ikon; klik = spustit/focus, drag & drop =
+  přiřazení ke klávese
+- **Hotkey Recorder** — klikni a nahravej klávesovou zkratku
+- **Mediální klávesy** — play/stop/next/prev/volume/mute
+- **3 profily** (EDIT / MEDIA / CODE) — přepínání z aplikace; stisk klávesy se
+  v konzoli rozsvítí s 2s plynulým fade-outem
+- **Kalibrace matice** — vestavěný průvodce naučí firmware fyzické rozložení
+  tlačítek (mapa se ukládá do NVS v ESP32)
 
-**Wokwi simulation** (`chips/`)
-- Wokwi has no 76×284 panel, so the project ships a custom display chip emulating the ST7789
-  (SPI, RGB565, MADCTL rotations, native RAM centering 82/18) — compiled to WASM with `wokwi-cli`
+### Širokoúhlý 2.25" IPS displej ST7789 (284×76 px)
+- **Živá telemetrie CPU / GPU / RAM** (1 Hz) — NVIDIA přes NVML, AMD a iGPU
+  přes Windows PDH, bez práv správce
+- Indikátory enkodérů (oblouky + %), aktivní profil, stav připojení
+- **Vlastní tapety** — obrázek se v PC vyřeže na 284×76, převede do RGB565
+  a pošle do framebufferu přes USB (ACK řízený přenos bloků)
+- přenáší se i celý design frame (tapeta + chrome) → firmware kreslí jen
+  dynamické hodnoty, žádné blikání
 
-## Serial protocol
+### 2× rotační enkodér EC11
+- **E1** — nativní ovládání systémové hlasitosti Windows + mute stiskem
+- **E2** — plně konfigurovatelný: hlasitost/mute konkrétní aplikace
+  (drag & drop z knihovny), scroll, zoom nebo vlastní hotkey
+  (zvlášť pro otáčení vlevo, vpravo a stisk)
 
-Device → PC (one line per event):
+### PC konzole (Fintr Deck)
+- tmavý design s přizpůsobitelným barevným motivem (presety + vlastní barva,
+  accent se promítne i na displej zařízení)
+- **interaktivní průvodce** (Product Tour) — po každé funkci, včetně mini
+  průvodce přímo v Nastavení; lze kdykoliv spustit znovu
+- režim simulace (klikací klávesy + enkodéry bez HW), sériový terminál,
+  živý náhled displeje, auto-detekce COM portu (VID/PID), auto-reconnect
 
-| Line | Meaning |
-|------|---------|
-| `KEY:<char>` | key press (`1`–`9`, `*`, `0`, `#`) |
-| `MACRO:<action>` | action of the key in the active profile |
-| `ENC1:<pos>` / `ENC2:<pos>` | absolute encoder position |
-| `ENC1_SW:1` / `ENC2_SW:1` | encoder button press |
-| `PROFILE:<n>:<name>` | active profile changed |
+## 3D model & konstrukce (Fusion 360)
 
-PC → device (newline-terminated):
+- 3D tištěné šasi (PLA/PETG), **kouřový plexi/akrylátový horní kryt**
+- zadní **výklopné nožičky** se zacvakávacím pantem (printed-in-place)
+- modely a doporučené nastavení tisku:
+  [hardware/3d_model_fusion360/](hardware/3d_model_fusion360/README.md)
 
-| Line | Meaning |
-|------|---------|
-| `T:CPU=45;GPU=30;TEMP=52` | update telemetry shown on the display |
-| `P:<n>` | switch profile (1..3) |
-| `N:<n>:<name>` | rename a page shown on the display |
-| `H:<text>` | render test text on the display (5 s) |
+## Seznam součástek (BOM)
 
-## Hardware
+| Součástka | Počet |
+|-----------|-------|
+| ESP32 DevKit v1 (30 pinů) | 1 |
+| ST7789 2.25" IPS 76×284 | 1 |
+| EC11 enkodér s push tlačítkem | 2 |
+| Mechanické spínače (MX kompatibilní) | 12 |
+| Keycaps 1u | 12 |
+| 3D tištěné šasi + kouřový akrylát 3 mm | 1 |
+| M2.5/M3 šrouby, zapojovací vodiče, nepajivé pole (nebo PCB) | dle potřeby |
 
-| Component | Pins |
-|-----------|------|
-| ESP32 (uPesy WROOM devkit) | USB to PC, 115200 baud |
-| Keypad matrix 4×3 | rows 22, 12, 13 · cols 15, 2, 19, 21 |
-| Encoder 1 (EC11) | CLK 32 · DT 33 · SW 25 |
-| Encoder 2 (EC11) | CLK 26 · DT 27 · SW 14 |
-| ST7789 76×284 | MOSI 23 · SCK 18 · CS 5 · DC 16 · RES 4 · BLK 17 |
+## Zapojení GPIO (ESP32 DevKit v1)
 
-Full wiring, default key maps and troubleshooting: [NOTES.md](NOTES.md).
+| Funkce | GPIO | Poznámka |
+|--------|------|----------|
+| ST7789 SDA (MOSI) | 23 | hardware VSPI |
+| ST7789 SCL (SCLK) | 18 | |
+| ST7789 CS | 5 | |
+| ST7789 DC | 16 | |
+| ST7789 RST | 4 | |
+| ST7789 BLK (podsvícení) | 17 | aktivní LOW |
+| Matice — řádky | 15, **2**, 19, 21 | GPIO2 = output (onboard LED zůstává nízko) |
+| Matice — sloupce | 22, **12**, 13 | internal pull-up |
+| Enkodér E1 — CLK / DT / SW | 32 / 33 / 25 | master volume |
+| Enkodér E2 — CLK / DT / SW | 26 / 27 / 14 | konfigurovatelný |
 
-## Getting started
+> ⚠️ GPIO12 je strapping pin (MTDI). S pull-upem na bootu může deska nastavit
+> flash napětí na 1,8 V. Na testované sestavě to funguje, ale pokud se deska
+> nespustí, zkus GPIO12 přehodit (kalibrace matice si s přesunem poradí).
 
-### Firmware
+## Zprovoznění krok za krokem
+
+### Krok 1 — firmware do ESP32
+
+Otevři ve VS Code složku [`firmware/`](firmware/) (PlatformIO projekt)
+nebo z příkazové řádky:
 
 ```powershell
-pio run              # build
-pio run -t upload    # flash a real board
+cd firmware
+pio run                 # build
+pio run -t upload       # flash (přes USB)
 pio device monitor -b 115200
 ```
 
-> Build artifacts are redirected to `C:/Temp/keypad_build` in `platformio.ini` because the Xtensa
-> linker fails on non-ASCII paths. For Wokwi, create a junction `wokwi_build` → `C:\Temp\keypad_build`
-> (see NOTES.md § 5).
+Předkompilovaný `firmware.bin` je k dispozici v GitHub Releases
+(export: `powershell -ExecutionPolicy Bypass -File firmware/export_firmware.ps1`).
 
-### PC app
+### Krok 2 — PC konzole
 
 ```powershell
-python -m pip install -r pc/KeypadApp/requirements.txt
-python pc/KeypadApp/main.py            # auto-detects the COM port and connects
-python pc/KeypadApp/main.py --dry-run  # log actions only
+python -m pip install -r pc_app/requirements.txt
+python pc_app/main.py               # auto-detekce portu + auto-connect
+python pc_app/main.py --dry-run     # jen logovat akce
 ```
 
-Key bindings live in `pc/KeypadApp/bindings.json` (generated with defaults on first run,
-kept out of the repository).
+Release s hotovou binárkou `FintrDeck.exe` najdeš v GitHub Releases
+(build: `python pc_app/build_release.py`).
 
-### Simulation
+### Krok 3 — první připojení
 
-Open the project in VS Code with the Wokwi extension and run `Wokwi: Start Simulator`
-(uses `diagram.json`, `wokwi.toml` and the custom chip in `chips/`).
+1. Spusť konzoli — auto-detekce najde ESP32 (CP210x/CH340/FTDI), stav vpravo
+   nahoře ukáže `COMx · 115200` a `LIVE`.
+2. Při prvním spuštění se spustí **interaktivní průvodce** (znovu v
+   Nastavení → „Spustit průvodce aplikací").
+3. Přetáhni aplikaci z knihovny na klávesu — binding se uloží. Pro matici
+   použij **Nastavení → Kalibrace kláves**.
 
-## Repository layout
+## Simulace ve Wokwi
+
+Projekt obsahuje vlastní Wokwi čip emulující ST7789 76×284 (SPI, RGB565,
+MADCTL), takže displej i firmware lze vyvíjet bez reálného panelu:
+
+1. `pio run` ve `firmware/`
+2. VS Code → příkaz `Wokwi: Start Simulator` v otevřené složce `firmware/`
+
+Detaily: [docs/technicka-prirucka.md](docs/technicka-prirucka.md).
+
+## Struktura repozitáře
 
 ```
-src/            firmware (single-file Arduino sketch)
-chips/          custom Wokwi ST7789 display chip (C source + chip.json + WASM)
-pc/KeypadApp/   Python + PySide6 companion app
-pc/KeypadHost.ps1  legacy PowerShell host (sim/replay tool)
-cad/            Fusion 360 mechanical design (models + renders)
-print/          3D print files (STL/3MF, slicer notes, BOM)
-pcb/            KiCad interface board (schematic, layout, gerbers)
-hw_test/        bare-metal HW bring-up sketch
-tools/          helper scripts
-docs/images/    screenshots for this README
-diagram.json    Wokwi wiring
-NOTES.md        technical manual: protocol, key maps, build, troubleshooting
+pc_app/                       PC konzole (Python + PySide6)
+  build_release.py            PyInstaller build → FintrDeck.exe
+  bindings.example.json       výchozí bindingy
+firmware/                     PlatformIO projekt (ESP32)
+  src/main.cpp                firmware (matice, enkodéry, ST7789, protokol)
+  chips/                      vlastní Wokwi čip displeje (C → WASM)
+  diagram.json, wokwi.toml    Wokwi simulace
+  export_firmware.ps1         export firmware.bin pro release
+hardware/
+  3d_model_fusion360/         Fusion 360 šasi + nastavení tisku
+  pcb/                        KiCad interface deska (připravuje se)
+docs/                         technická příručka, screenshoty, video
+tools/                        pomůcky (generování ikony, testy enkodérů)
 ```
 
-The `cad/`, `print/` and `pcb/` folders describe their expected contents and are
-filled as the mechanical design and PCB layout progress.
+## Uživatelská data
 
-## Roadmap
+`pc_app/bindings.json` si aplikace vytvoří sama (viz
+[bindings.example.json](pc_app/bindings.example.json)); do repa nepatří.
 
-1. HW bring-up — display, encoders, then the 4×3 key matrix (in progress)
-2. PC app ↔ real COM port roundtrip (blocked on ESP32 USB detection)
-3. On-display telemetry + encoder/volume widgets — done
-4. App UI — device preview, app library with icons, drag&drop binding editor,
-   wallpapers, theming — done
-5. Mechanical: Fusion enclosure + 3D-printed parts (`cad/`, `print/`)
-6. Electronics: KiCad interface board replacing the breadboard (`pcb/`)
+## Licence
 
-## License
-
-MIT — see [LICENSE](LICENSE).
+MIT — viz [LICENSE](LICENSE).

@@ -17,10 +17,14 @@ from PySide6.QtWidgets import (QCheckBox, QColorDialog, QComboBox, QDialog,
 
 import actions
 import config
+import design_frame
 import protocol
 import telemetry
 import theme
+import tour
+from calibration_wizard import CalibrationWizard
 from app_library import AppLibraryPanel, icon_for_exe
+from e2_config import E2ConfigPanel
 from serial_link import SerialLink
 from widgets import (AudioPill, DisplayPreview, EncoderCard, HotkeyEdit,
                      KeypadGrid, SegmentedControl, StatusPill, prettify)
@@ -310,6 +314,7 @@ class SettingsDialog(QDialog):
         layout.setSpacing(12)
 
         conn_card, conn = self._section("P\u0159ipojen\u00ed")
+        self.conn_card = conn_card
         port_row = QHBoxLayout()
         port_row.setSpacing(6)
         self.port_combo = QComboBox()
@@ -340,6 +345,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(conn_card)
 
         modes_card, modes = self._section("Re\u017eimy")
+        self.modes_card = modes_card
         self.sim_check = QCheckBox("Simulace enkod\u00e9r\u016f (bez HW)")
         self.sim_check.setChecked(window.sim_enabled)
         self.sim_check.stateChanged.connect(
@@ -372,6 +378,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(modes_card)
 
         audio_card, audio_box = self._section("Audio")
+        self.audio_card = audio_card
         audio_row = QHBoxLayout()
         audio_row.setSpacing(8)
         audio_row.addWidget(QLabel("C\u00edlov\u00e1 aplikace"))
@@ -388,6 +395,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(audio_card)
 
         enc_card, enc_box = self._section("Enkod\u00e9r E2")
+        self.enc_card = enc_card
         enc_row = QHBoxLayout()
         enc_row.setSpacing(8)
         enc_row.addWidget(QLabel("Re\u017eim"))
@@ -418,7 +426,8 @@ class SettingsDialog(QDialog):
         enc_box.addWidget(hk_wrap)
 
         self.e2_hint = QLabel(
-            "Hlasitost aplikace pou\u017e\u00edv\u00e1 c\u00edlovou aplikaci ze sekce Audio.")
+            "Pln\u00e1 konfigurace E2 je v kart\u011b E2 (p\u0159ehled za\u0159\u00edzen\u00ed): "
+            "re\u017eim, c\u00edlov\u00fd proces i zkratky pro ot\u00e1\u010den\u00ed a stisk.")
         self.e2_hint.setStyleSheet("color: %s; font-size: 10px;" % theme.DIM)
         self.e2_hint.setWordWrap(True)
         enc_box.addWidget(self.e2_hint)
@@ -429,6 +438,7 @@ class SettingsDialog(QDialog):
         layout.addWidget(enc_card)
 
         theme_card, theme_box = self._section("Barva akcentu")
+        self.theme_card = theme_card
         presets = QHBoxLayout()
         presets.setSpacing(8)
         for color in ACCENT_PRESETS:
@@ -453,6 +463,31 @@ class SettingsDialog(QDialog):
         presets.addWidget(reset)
         theme_box.addLayout(presets)
         layout.addWidget(theme_card)
+
+        tour_card, tour_box = self._section("Pr\u016fvodce aplikac\u00ed")
+        self.tour_card = tour_card
+        tour_hint = QLabel(
+            "Projde hlavn\u00ed \u010d\u00e1sti aplikace a vysv\u011btl\u00ed, co d\u011blaj\u00ed.")
+        tour_hint.setStyleSheet("color: %s; font-size: 10px;" % theme.DIM)
+        tour_hint.setWordWrap(True)
+        tour_box.addWidget(tour_hint)
+        tour_btn = QPushButton("Spustit pr\u016fvodce aplikac\u00ed")
+        tour_btn.setObjectName("accent")
+        tour_btn.clicked.connect(self._start_tour)
+        tour_box.addWidget(tour_btn)
+        calib_hint = QLabel(
+            "Kalibrace nau\u010d\u00ed appku, kter\u00e1 fyzick\u00e1 kl\u00e1vesa "
+            "je kter\u00e1 \u2013 spus\u0165 ji, kdyby tla\u010d\u00edtka "
+            "nesouhlasila.")
+        calib_hint.setStyleSheet("color: %s; font-size: 10px;" % theme.DIM)
+        calib_hint.setWordWrap(True)
+        calib_hint.setVisible(False)
+        tour_box.addWidget(calib_hint)
+        calib_btn = QPushButton("Kalibrace kl\u00e1ves")
+        calib_btn.setObjectName("ghost")
+        calib_btn.clicked.connect(self._open_calibration)
+        tour_box.addWidget(calib_btn)
+        layout.addWidget(tour_card)
 
         layout.addStretch(1)
         close_row = QHBoxLayout()
@@ -496,11 +531,18 @@ class SettingsDialog(QDialog):
         self.window.set_e2_mode(mode)
         self._e2_hk_wrap.setVisible(mode == "hotkey")
         self.e2_hint.setVisible(mode == "app_volume")
-
     def _pick_color(self):
         color = QColorDialog.getColor(QColor(theme.ACCENT), self, "Barva akcentu")
         if color.isValid():
             self.window.set_accent(color.name())
+
+    def _start_tour(self):
+        self.accept()
+        QTimer.singleShot(250, lambda: self.window.start_tour(force=True))
+
+    def _open_calibration(self):
+        self.accept()
+        QTimer.singleShot(200, self.window.open_calibration)
 
 
 class HotkeyDialog(QDialog):
@@ -554,7 +596,7 @@ class HotkeyDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self, args):
         super().__init__()
-        self.setWindowTitle("KeypadApp \u2014 Macro Pad Console")
+        self.setWindowTitle("Fintr Deck \u2014 Macro Pad Console")
         self.resize(1440, 900)
         self.setMinimumSize(1080, 760)
 
@@ -579,6 +621,20 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._restore_wallpaper()
+
+        # Wallpaper transfer state (ACK driven, see protocol.py).
+        self._wp_raw = None
+        self._wp_blocks = 0
+        self._wp_index = 0
+        self._wp_retries = 0
+        self._wp_phase = "idle"     # idle | wait_begin | wait_ack | wait_end
+        self._wp_timer = QTimer(self)
+        self._wp_timer.setSingleShot(True)
+        self._wp_timer.timeout.connect(self._wp_timeout)
+
+        # Mixer values pushed to the device rings (V: line).
+        self._values_line = ""
+        self._values_sent_ms = 0
 
         port = getattr(args, "port", None) or self._auto_port()
         baud = getattr(args, "baud", None) or self.cfg.get("baud", config.DEFAULT_BAUD)
@@ -607,9 +663,13 @@ class MainWindow(QMainWindow):
         self._telemetry_bridge = telemetry.start(self._telemetry_stop)
         self._telemetry_bridge.ready.connect(self._on_telemetry)
 
-        self.log("sys", "KeypadApp ready")
+        self.log("sys", "Fintr Deck ready")
         if port:
             self.toggle_connection()
+
+        self.tour = tour.TourOverlay(self)
+        self.tour.closed.connect(self._on_tour_closed)
+        self._tour_autostart_done = False
 
         if getattr(args, "demo", False):
             self.set_dry_run(True)
@@ -627,7 +687,7 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(12)
 
-        layout.addLayout(self._build_status_row())
+        layout.addWidget(self._build_status_row())
 
         content = QHBoxLayout()
         content.setContentsMargins(0, 0, 0, 0)
@@ -637,14 +697,15 @@ class MainWindow(QMainWindow):
         layout.addLayout(content, 1)
 
     def _build_status_row(self):
-        row = QHBoxLayout()
+        self.status_row = QWidget()
+        row = QHBoxLayout(self.status_row)
         row.setContentsMargins(2, 0, 2, 0)
         row.setSpacing(10)
 
         self.brand_label = QLabel()
         row.addWidget(self.brand_label, 0, Qt.AlignVCenter)
         self._refresh_brand()
-        subtitle = QLabel(theme.caption("Macro pad console"))
+        subtitle = QLabel(theme.caption("Macro pad konzole"))
         row.addWidget(subtitle, 0, Qt.AlignVCenter)
         row.addStretch(1)
 
@@ -662,7 +723,7 @@ class MainWindow(QMainWindow):
             "QPushButton { font-family: 'Segoe UI Symbol'; font-size: 17px; }")
         self.settings_btn.clicked.connect(self._open_settings)
         row.addWidget(self.settings_btn, 0, Qt.AlignVCenter)
-        return row
+        return self.status_row
 
     def _build_device_panel(self):
         card = QFrame()
@@ -705,7 +766,16 @@ class MainWindow(QMainWindow):
         encoders = QHBoxLayout()
         encoders.setSpacing(10)
         self.enc1_widget = EncoderCard(1, "E1 • master")
-        self.enc2_widget = EncoderCard(2, "E2 • aplikace")
+        self.enc2_widget = EncoderCard(2, "E2 • aplikace",
+                                       tabs=["Ovl\u00e1d\u00e1n\u00ed",
+                                             "Nastaven\u00ed"],
+                                       accept_drops=True)
+        self.e2_config = E2ConfigPanel()
+        self.e2_config.changed.connect(self._on_e2_config_changed)
+        self.enc2_widget.set_config_page(self.e2_config)
+        self.enc2_widget.entry_dropped.connect(self._e2_entry_dropped)
+        self.e2_config.set_state(self._encoder_cfg())
+        self.e2_config.refresh_targets(self._audio_apps_list())
         self.enc1_widget.step.connect(lambda d: self._sim_encoder(1, d))
         self.enc2_widget.step.connect(lambda d: self._sim_encoder(2, d))
         self.enc1_widget.switch.connect(lambda: self._sim_encoder_switch(1))
@@ -752,54 +822,121 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ wallpapers
     def _restore_wallpaper(self):
+        self._wallpaper_path = None
         selected = ((self.cfg.get("wallpaper") or {}).get("selected") or "")
         if not selected:
             return
         for folder in (wallpapers.BUILTIN_DIR, wallpapers.CUSTOM_DIR):
             path = folder / ("%s.png" % selected)
             if path.exists():
+                self._wallpaper_path = path
                 self.display_preview.set_wallpaper(QPixmap(str(path)))
                 return
+
+    def _design_raw(self):
+        """Static design frame (wallpaper + chrome) rendered by the PC app."""
+        try:
+            return design_frame.build(self._wallpaper_path)
+        except Exception as exc:  # noqa: BLE001
+            self.log("sys", "design frame failed: %s" % exc)
+            return None
 
     def _apply_wallpaper(self, entry, raw):
         self.cfg.setdefault("wallpaper", {})["selected"] = entry.get("id", "")
         config.save_config(self.cfg)
+        self._wallpaper_path = entry["path"]
         self.display_preview.set_wallpaper(QPixmap(str(entry["path"])))
+        frame = self._design_raw()
         self.wallpaper_panel.set_status(
-            "Pozad\u00ed nastaveno \u00b7 %d B RGB565" % len(raw))
-        self.log("sys", "wallpaper %s applied (%d B RGB565)"
-                 % (entry.get("id"), len(raw)))
-        self._send_wallpaper(raw)
+            "Pozad\u00ed nastaveno \u00b7 %d B RGB565" % (len(frame or raw)))
+        self.log("sys", "wallpaper %s applied (%d B design frame)"
+                 % (entry.get("id"), len(frame or raw)))
+        if frame:
+            self._send_wallpaper(frame)
 
-    def _send_wallpaper(self, raw):
-        if getattr(self, "_wp_timer", None) is not None and self._wp_timer.isActive():
-            self._wp_timer.stop()
-        self._wp_lines = iter(protocol.wallpaper_transfer_lines(raw))
-        self._wp_sent = 0
-        self._wp_timer = QTimer(self)
-        self._wp_timer.setInterval(30)
-        self._wp_timer.timeout.connect(self._wp_pump)
-        self._wp_timer.start()
-        self.wallpaper_panel.set_status("Odes\u00edl\u00e1m na za\u0159\u00edzen\u00ed\u2026")
+    # ACK driven transfer: W:B -> WP:BEGIN -> block -> WP:ACK -> ... -> W:E
+    def _send_wallpaper(self, raw, reason=""):
+        self._wp_raw = raw
+        self._wp_blocks = protocol.wallpaper_block_count(raw)
+        self._wp_index = 0
+        self._wp_retries = 0
+        self._wp_timer.stop()
 
-    def _wp_pump(self):
-        try:
-            for _ in range(16):
-                line = next(self._wp_lines)
-                if not self.serial.send(line):
-                    self._wp_timer.stop()
-                    self.wallpaper_panel.set_status(
-                        "Za\u0159\u00edzen\u00ed nen\u00ed p\u0159ipojeno \u00b7"
-                        " data p\u0159ipravena (.bin)")
-                    self.log("sys", "wallpaper transfer: not connected")
-                    return
-                self._wp_sent += 1
-        except StopIteration:
-            self._wp_timer.stop()
+        if not self.serial.connected:
+            self._wp_phase = "idle"
             self.wallpaper_panel.set_status(
-                "Odesl\u00e1no na za\u0159\u00edzen\u00ed \u00b7 %d datov\u00fdch"
-                " d\u00e1vek" % self._wp_sent)
-            self.log("sys", "wallpaper transferred (%d chunks)" % self._wp_sent)
+                "Za\u0159\u00edzen\u00ed nen\u00ed p\u0159ipojeno \u00b7"
+                " tapeta se ode\u0161le po p\u0159ipojen\u00ed")
+            self.log("sys", "wallpaper queued (device offline)")
+            return
+
+        if not self.serial.send(protocol.wallpaper_begin(raw)):
+            self._wp_phase = "idle"
+            return
+        self._wp_phase = "wait_begin"
+        self._wp_timer.start(2000)
+        self.wallpaper_panel.set_status(
+            "Odes\u00edl\u00e1m tapetu \u00b7 %d blok\u016f" % self._wp_blocks)
+        self.log("sys", "wallpaper transfer start (%d blocks)%s"
+                 % (self._wp_blocks, (" \u00b7 " + reason) if reason else ""))
+
+    def _wp_send_block(self, index):
+        self._wp_index = index
+        if index >= self._wp_blocks:
+            if not self.serial.send(protocol.wallpaper_end()):
+                self._wp_phase = "idle"
+                return
+            self._wp_phase = "wait_end"
+            self._wp_timer.start(3000)
+            return
+        if not self.serial.send(protocol.wallpaper_block(self._wp_raw, index)):
+            self._abort_wallpaper("write failed")
+            return
+        self._wp_phase = "wait_ack"
+        self._wp_timer.start(2000)
+
+    def _wp_timeout(self):
+        if self._wp_phase == "idle":
+            return
+        if self._wp_retries >= 3:
+            self._abort_wallpaper("timeout")
+            return
+        self._wp_retries += 1
+        if self._wp_phase == "wait_begin":
+            self.serial.send(protocol.wallpaper_begin(self._wp_raw))
+        elif self._wp_phase == "wait_ack":
+            self.serial.send(protocol.wallpaper_block(self._wp_raw, self._wp_index))
+        elif self._wp_phase == "wait_end":
+            self.serial.send(protocol.wallpaper_end())
+        self._wp_timer.start(2000)
+
+    def _abort_wallpaper(self, why):
+        self._wp_phase = "idle"
+        self._wp_timer.stop()
+        self.wallpaper_panel.set_status("P\u0159enos tapety selhal: %s" % why)
+        self.log("sys", "wallpaper transfer failed: %s" % why)
+
+    def _on_wp_event(self, payload):
+        state = payload.get("state", "")
+        if state == "begin":
+            self._wp_retries = 0
+            self._wp_timer.stop()
+            self._wp_send_block(0)
+        elif state == "ack":
+            self._wp_retries = 0
+            self._wp_timer.stop()
+            index = payload.get("value", -1)
+            if index != self._wp_index:      # stale ACK from a retried block
+                return
+            self._wp_send_block(index + 1)
+        elif state == "ok":
+            self._wp_timer.stop()
+            self._wp_phase = "idle"
+            self.wallpaper_panel.set_status(
+                "Tapeta na za\u0159\u00edzen\u00ed \u00b7 %d B" % payload.get("value", 0))
+            self.log("sys", "wallpaper on device (%d B)" % payload.get("value", 0))
+        elif state in ("trunc", "bad"):
+            self._abort_wallpaper(state)
 
     def _build_right_column(self):
         column = QWidget()
@@ -902,6 +1039,8 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------- helpers
     def log(self, channel, message):
+        if os.environ.get("KEYPAD_DEBUG"):
+            print("%s %s" % (channel, message), flush=True)
         if not hasattr(self, "log_view"):
             return
         stamp = time.strftime("%H:%M:%S")
@@ -941,6 +1080,148 @@ class MainWindow(QMainWindow):
     def _open_settings(self):
         SettingsDialog(self).exec()
 
+    # -------------------------------------------------------------- tour
+    def open_calibration(self):
+        self._wizard = CalibrationWizard(self)
+        self._wizard.show()
+
+    def showEvent(self, event):  # noqa: N802 - Qt naming
+        super().showEvent(event)
+        if not getattr(self, "_tour_autostart_done", False):
+            self._tour_autostart_done = True
+            QTimer.singleShot(400, self._maybe_start_tour)
+
+    def _maybe_start_tour(self):
+        if not self.cfg.get("tour_completed", False):
+            self.start_tour()
+
+    def start_tour(self, force=False):
+        if not force and self.cfg.get("tour_completed", False):
+            return
+        self._switch_left_tab(0)
+        self.tour.start(self._tour_steps())
+        self.log("sys", "tour started")
+
+    def _tour_steps(self):
+        return [
+            tour.Step(
+                "Virtu\u00e1ln\u00ed displej",
+                "N\u00e1hled zrcadl\u00ed re\u00e1ln\u00fd ST7789 284\u00d776: "
+                "oblouky E1/E2, \u017eivou telemetrii CPU/GPU/RAM a n\u00e1zev "
+                "profilu. P\u0159ep\u00edna\u010d Za\u0159\u00edzen\u00ed | Tapety "
+                "p\u0159ep\u00edn\u00e1 mezi n\u00e1hledem a galeri\u00ed tapet.",
+                [lambda: self.left_seg, lambda: self.display_preview]),
+            tour.Step(
+                "Matice tla\u010d\u00edtek",
+                "12 tla\u010d\u00edtek (3\u00d74) reaguje na klik my\u0161\u00ed "
+                "i na stisk fyzick\u00e9ho keypadu. P\u0159i stisku se na 2 s "
+                "rozsv\u00edt\u00ed a spust\u00ed p\u0159i\u0159azenou akci.",
+                [lambda: self.keypad]),
+            tour.Step(
+                "Oto\u010dn\u00e9 enkod\u00e9ry",
+                "E1 ovl\u00e1d\u00e1 hlavn\u00ed hlasitost PC (master volume + "
+                "mute stiskem). E2 slou\u017e\u00ed pro vlastn\u00ed funkci \u2013 "
+                "hlasitost aplikace, scroll, zoom nebo hotkey.",
+                [lambda: self.enc1_widget, lambda: self.enc2_widget]),
+            tour.Step(
+                "Knihovna aplikac\u00ed a akc\u00ed",
+                "Programy nalezen\u00e9 v PC a syst\u00e9mov\u00e9 akce/zkratky. "
+                "P\u0159et\u00e1hni je drag & drop na libovoln\u00e9 tla\u010d\u00edtko "
+                "a binding se hned ulo\u017e\u00ed.",
+                [lambda: self.library]),
+            tour.Step(
+                "Profily a editor kl\u00e1vesy",
+                "EDIT / MEDIA / CODE jsou sady binding\u016f pro r\u016fzn\u00e9 "
+                "\u010dinnosti. Vybranou kl\u00e1vesu uprav\u00ed\u0161 v editoru "
+                "dole \u2013 akci, zkratku i popisek.",
+                [lambda: self.segment, lambda: self.inspector]),
+            tour.Step(
+                "Tapety",
+                "Klik na tapetu ji hned po\u0161le na displej za\u0159\u00edzen\u00ed "
+                "(284\u00d776, automatick\u00fd o\u0159ez). Tla\u010d\u00edtkem "
+                "\u201e+ P\u0159idat tapetu\u201c nahraje\u0161 vlastn\u00ed "
+                "obr\u00e1zek z PC.",
+                [lambda: self.wallpaper_panel],
+                action=lambda overlay: self._switch_left_tab(1)),
+            tour.Step(
+                "Stavov\u00e1 li\u0161ta a Nastaven\u00ed",
+                "Ukazatel COM portu a hlasitosti. Pod ikonou \u2699 zm\u011bn\u00ed\u0161 "
+                "barvu motivu (Theme), port za\u0159\u00edzen\u00ed, termin\u00e1l i "
+                "telemetrii.",
+                [lambda: self.status_row],
+                action=lambda overlay: self._switch_left_tab(0)),
+            tour.Step(
+                "Nastaven\u00ed",
+                "Tady m\u011bn\u00ed\u0161 p\u0159ipojen\u00ed, re\u017eimy, audio, "
+                "enkod\u00e9r E2 i Theme. Projdem to po jednotliv\u00fdch "
+                "sekc\u00edch.",
+                [lambda: self.settings_btn],
+                action=lambda overlay: self._open_settings_for_tour(overlay)),
+            tour.Step(
+                "Hotovo!",
+                "To je v\u0161e \u2013 spou\u0161t\u011bni aplikac\u00ed, "
+                "hlasitost, tapety i profily m\u00e1\u0161 v ruce. Pr\u016fvodce "
+                "si kdykoliv spust\u00ed\u0161 znovu v Nastaven\u00ed.",
+                []),
+        ]
+
+    def _open_settings_for_tour(self, overlay):
+        overlay.pause()
+        dlg = SettingsDialog(self)
+        dlg.setModal(False)
+        self._settings_dlg = dlg
+
+        sub = tour.TourOverlay(dlg)
+        sub_steps = [
+            tour.Step("P\u0159ipojen\u00ed",
+                      "Vyber COM port (nap\u0159. COM7), rychlost "
+                      "(115200) a spojen\u00ed zavol\u00e1\u0161 p\u0159es "
+                      "Connect / Disconnect.",
+                      [lambda: dlg.conn_card]),
+            tour.Step("Re\u017eimy",
+                      "Simulace enkod\u00e9r\u016f, dry run, termin\u00e1l/log, "
+                      "odes\u00edl\u00e1n\u00ed telemetrie a zobrazen\u00ed "
+                      "nezn\u00e1m\u00fdch zdroj\u016f.",
+                      [lambda: dlg.modes_card]),
+            tour.Step("Audio",
+                      "C\u00edlov\u00e1 aplikace, kterou ovl\u00e1d\u00e1 "
+                      "enkod\u00e9r E2 (hlasitost + mute).",
+                      [lambda: dlg.audio_card]),
+            tour.Step("Enkod\u00e9r E2",
+                      "Re\u017eim E2: hlasitost aplikace, scroll, zoom "
+                      "nebo vlastn\u00ed hotkey.",
+                      [lambda: dlg.enc_card]),
+            tour.Step("Barva akcentu (Theme)",
+                      "Barevn\u00e9 presety i vlastn\u00ed barva \u2013 "
+                      "prom\u00edtnou se do appky i na displej keypadu.",
+                      [lambda: dlg.theme_card]),
+            tour.Step("Pr\u016fvodce a kalibrace",
+                      "Tady si kdykoliv spust\u00ed\u0161 pr\u016fvodce, "
+                      "nebo spust\u00ed\u0161 kalibraci kl\u00e1ves, kdyby "
+                      "nesed\u011blo po\u0159ad\u00ed.",
+                      [lambda: dlg.tour_card]),
+        ]
+
+        def _on_sub_closed():
+            if self._settings_dlg is not dlg:
+                return          # already handled (e.g. double finish signal)
+            dlg.close()
+            dlg.deleteLater()
+            self._settings_dlg = None
+            self.tour.resume()
+            self.tour._next()
+
+        sub.closed.connect(_on_sub_closed)
+        dlg.finished.connect(_on_sub_closed)
+        dlg.show()
+        dlg.raise_()
+        sub.start(sub_steps)
+
+    def _on_tour_closed(self):
+        self.cfg["tour_completed"] = True
+        config.save_config(self.cfg)
+        self.log("sys", "tour finished")
+
     # ------------------------------------------------------------- state
     def set_sim_enabled(self, value):
         self.sim_enabled = bool(value)
@@ -979,13 +1260,18 @@ class MainWindow(QMainWindow):
         self.enc2_widget.bar.update()
         self.inspector.refresh_theme()
         self._refresh_brand()
+        if getattr(self, "tour", None) is not None:
+            self.tour.refresh_theme()
         self.send_line(protocol.cmd_accent(final))
+        frame = self._design_raw()
+        if frame:
+            self._send_wallpaper(frame, "theme")
 
     def _refresh_brand(self):
         self.brand_label.setText(
             '<span style="color:%s; font-size:15px;">\u25cf</span>'
             '&nbsp;<span style="color:%s; font-size:13px; font-weight:700;">'
-            'KeypadApp</span>' % (theme.ACCENT, theme.TEXT))
+            'Fintr Deck</span>' % (theme.ACCENT, theme.TEXT))
 
     def set_audio_app(self, target):
         if target == self.cfg["audio"].get("target_app"):
@@ -1008,7 +1294,7 @@ class MainWindow(QMainWindow):
             self.log("sys", "disconnected")
             return
         if not self.current_port:
-            QMessageBox.warning(self, "KeypadApp",
+            QMessageBox.warning(self, "Fintr Deck",
                                 "Vyber port v Nastaven\u00ed.")
             return
         self._link_active = True
@@ -1036,14 +1322,31 @@ class MainWindow(QMainWindow):
                 config.save_config(self.cfg)
             self._push_page_names()
             self._refresh_audio_label()
+            self.send_line("?\n")
             self.send_line(protocol.cmd_accent(theme.ACCENT))
+            frame = self._design_raw()
+            if frame:
+                self._send_wallpaper(frame, "auto po pripojeni")
+            self._push_values(force=True)
         elif message.startswith("disconnected") or message.startswith("error") \
                 or "failed" in message:
             self.status_pill.set_status("offline", "offline")
             self.display_preview.set_live(False)
+            self._wp_phase = "idle"
+            self._wp_timer.stop()
 
     def on_device_line(self, line):
         self.log("in", line)
+        if line.startswith("VER:"):
+            version = line[4:].strip()
+            self.log("sys", "firmware version %s" % version)
+            if version.isdigit() and int(version) < 3:
+                self.log("sys", "pozor: firmware < 3 neum\u00ed ACK tapety, "
+                                "nahraj aktu\u00e1ln\u00ed build")
+            return
+        if line.startswith("KEYMAP:"):
+            self.log("sys", "keymap %s" % line[7:])
+            return
         kind, payload = protocol.parse_line(line)
         if kind == "key":
             self.handle_key(payload["char"])
@@ -1055,6 +1358,8 @@ class MainWindow(QMainWindow):
             self.select_profile(payload["index"])
         elif kind == "display":
             self.display_preview.set_pc(payload["text"][:30])
+        elif kind == "wp":
+            self._on_wp_event(payload)
 
     def _push_page_names(self):
         if not self.serial.connected:
@@ -1170,6 +1475,14 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------- actions
     def handle_key(self, char, source="hw"):
+        if source == "hw":
+            now = time.monotonic()
+            if char == getattr(self, "_last_hw_key", None) \
+                    and now - getattr(self, "_last_hw_key_ms", 0.0) < 0.15:
+                self.log("act", "key %s debounced" % char)
+                return
+            self._last_hw_key = char
+            self._last_hw_key_ms = now
         self.selected_key = char
         self.keypad.select(char)
         self.keypad.flash(char)
@@ -1180,7 +1493,10 @@ class MainWindow(QMainWindow):
         self.inspector.load(profile, char)
         action = profile["keys"].get(char, {"type": "none"})
         self.log("act", "key %s -> %s" % (char, config.action_summary(action)))
-        actions.execute_action(action, self._ctx)
+        try:
+            actions.execute_action(action, self._ctx)
+        except Exception as exc:  # noqa: BLE001 - a bad binding must not kill the app
+            self.log("act", "key %s action failed: %s" % (char, exc))
 
     def handle_encoder(self, enc_id, pos):
         if enc_id == 1:
@@ -1228,8 +1544,12 @@ class MainWindow(QMainWindow):
             mode = self._e2_mode()
             if mode == "app_volume":
                 self._mute_app_toggle()
+            elif mode == "scroll":
+                self._send_middle_click()
+            elif mode == "zoom":
+                self._e2_hotkey_fire("Ctrl+0")
             elif mode == "hotkey":
-                self._e2_hotkey_fire()
+                self._e2_hotkey_fire(self._e2_switch_combo())
             else:
                 self.log("act", "E2 switch (%s)" % mode)
         self._update_display_meters()
@@ -1249,12 +1569,91 @@ class MainWindow(QMainWindow):
         self.cfg.setdefault("encoder", {})["e2_mode"] = mode
         self._on_config_changed()
         self._update_e2_title()
-        self._update_display_meters()
+        self._sync_e2_config()
+        self._apply_audio_view()
 
     def set_e2_combo(self, combo):
-        self.cfg.setdefault("encoder", {})["e2_combo"] = (combo or "").strip()
+        # Settings dialog single field: rotation hotkey (left = right) + legacy
+        value = (combo or "").strip()
+        enc = self.cfg.setdefault("encoder", {})
+        enc["e2_combo"] = value
+        enc["e2_hotkey_left"] = value
+        enc["e2_hotkey_right"] = value
         self._on_config_changed()
+        self._sync_e2_config()
         self._update_display_meters()
+
+    def set_e2_target(self, target):
+        self.cfg.setdefault("encoder", {})["e2_target"] = (target or "").strip()
+        self._on_config_changed()
+        self._update_e2_title()
+        self._sync_e2_config()
+        self._apply_audio_view()
+
+    def _e2_target(self):
+        enc = self._encoder_cfg()
+        return (enc.get("e2_target")
+                or self.cfg["audio"].get("target_app", "")).strip()
+
+    def _e2_hotkey_for(self, delta):
+        enc = self._encoder_cfg()
+        if int(delta) < 0:
+            return (enc.get("e2_hotkey_left")
+                    or enc.get("e2_combo") or "").strip()
+        return (enc.get("e2_hotkey_right")
+                or enc.get("e2_combo") or "").strip()
+
+    def _e2_switch_combo(self):
+        return (self._encoder_cfg().get("e2_hotkey_switch")
+                or self._e2_combo_value()).strip()
+
+    def _e2_audio_values(self, cache):
+        """App volume values for the E2 target (separate from the top combo)."""
+        if self._e2_target() == self.cfg["audio"].get("target_app", "").strip():
+            return cache.get("app"), bool(cache.get("app_muted"))
+        return cache.get("app2"), bool(cache.get("app2_muted"))
+
+    def _audio_apps_list(self):
+        if audio is None:
+            return []
+        try:
+            return audio.audio_apps()
+        except Exception:  # noqa: BLE001 - COM init may fail without pycaw
+            return []
+
+    def _sync_e2_config(self):
+        if hasattr(self, "e2_config"):
+            self.e2_config.set_state(self._encoder_cfg())
+            self.e2_config.refresh_targets(self._audio_apps_list())
+
+    def _on_e2_config_changed(self):
+        if not hasattr(self, "e2_config"):
+            return
+        enc = self.cfg.setdefault("encoder", {})
+        enc.update(self.e2_config.state())
+        self._on_config_changed()
+        self._update_e2_title()
+        self._apply_audio_view()
+
+    def _e2_entry_dropped(self, entry):
+        """App dropped from the library onto the E2 card -> app volume mode."""
+        if not isinstance(entry, dict):
+            return
+        action = entry.get("action") or {}
+        process = (action.get("process")
+                   or os.path.basename(entry.get("exe") or ""))
+        if not process or not process.lower().endswith(".exe"):
+            self.log("act", "E2: %s nelze p\u0159i\u0159adit (bez .exe procesu)"
+                     % (entry.get("name") or "?"))
+            return
+        enc = self.cfg.setdefault("encoder", {})
+        enc["e2_mode"] = "app_volume"
+        enc["e2_target"] = process
+        self._on_config_changed()
+        self._update_e2_title()
+        self._sync_e2_config()
+        self._apply_audio_view()
+        self.log("act", "E2 -> hlasitost aplikace: %s" % process)
 
     def _update_e2_title(self):
         titles = {
@@ -1274,8 +1673,7 @@ class MainWindow(QMainWindow):
         elif mode == "zoom":
             self._send_scroll(delta, ctrl=True)
         else:
-            for _ in range(max(1, abs(int(delta)))):
-                self._e2_hotkey_fire()
+            self._e2_hotkey_fire(self._e2_hotkey_for(delta))
 
     def _send_scroll(self, delta, ctrl=False):
         if self.dry_run:
@@ -1287,8 +1685,8 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             self.log("act", "wheel failed: %s" % exc)
 
-    def _e2_hotkey_fire(self):
-        combo = self._e2_combo_value()
+    def _e2_hotkey_fire(self, combo=None):
+        combo = (combo or self._e2_combo_value()).strip()
         if not combo:
             self.log("act", "E2 hotkey not set")
             return
@@ -1301,6 +1699,16 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             self.log("act", "E2 hotkey failed: %s" % exc)
 
+    def _send_middle_click(self):
+        if self.dry_run:
+            self.log("act", "[dry] middle click")
+            return
+        try:
+            actions.send_middle_click()
+            self.log("act", "middle click")
+        except Exception as exc:  # noqa: BLE001
+            self.log("act", "middle click failed: %s" % exc)
+
     # ----------------------------------------------------------------- audio
     def _audio_loop(self):
         while not self._audio_stop.is_set():
@@ -1312,6 +1720,11 @@ class MainWindow(QMainWindow):
             if audio is not None:
                 try:
                     data = audio.snapshot(target)
+                    e2_target = self._e2_target()
+                    if e2_target and e2_target != target:
+                        data2 = audio.snapshot(e2_target)
+                        data["app2"] = data2.get("app")
+                        data["app2_muted"] = data2.get("app_muted", False)
                 except Exception as exc:  # noqa: BLE001
                     data = {"master": None, "master_muted": False, "app": None,
                             "app_muted": False, "app_name": target,
@@ -1366,11 +1779,18 @@ class MainWindow(QMainWindow):
                                    app_muted)
         self.enc1_widget.set_values(master, master_muted, self.last_enc1 or 0)
         mode = self._e2_mode()
+        e2_value, e2_muted = self._e2_audio_values(cache)
         if mode == "app_volume":
-            self.enc2_widget.set_values(app_value, app_muted, self.last_enc2 or 0)
+            self.enc2_widget.set_values(e2_value, e2_muted, self.last_enc2 or 0)
         else:
             self.enc2_widget.set_values(None, False, self.last_enc2 or 0)
             self.enc2_widget.state_label.setText(mode)
+        if mode == "app_volume":
+            target = self._e2_target()
+            self.enc2_widget.set_target(
+                os.path.splitext(target)[0][:22] if target else "")
+        else:
+            self.enc2_widget.set_target("")
         self._update_display_meters()
 
     def _update_display_meters(self):
@@ -1383,7 +1803,7 @@ class MainWindow(QMainWindow):
 
         mode = self._e2_mode()
         if mode == "app_volume":
-            value = cache.get("app")
+            value = self._e2_audio_values(cache)[0]
             if value is None:
                 self.display_preview.set_meter(2, 0, "--")
             else:
@@ -1392,10 +1812,32 @@ class MainWindow(QMainWindow):
             pos = self.last_enc2 or 0
             self.display_preview.set_meter(2, abs(pos) % 100, str(pos))
         else:
-            combo = self._e2_combo_value()
+            combo = self._e2_hotkey_for(1) or self._e2_switch_combo()
             key = combo.split("+")[-1] if combo else ""
             self.display_preview.set_meter(2, 100 if combo else 0,
                                             (key or "?").upper())
+        self._push_values()
+
+    def _push_values(self, force=False):
+        """Mixer percentages -> device rings (V:...), on change + 2 s keepalive."""
+        cache = self._audio_cache()
+        master = cache.get("master")
+        master_muted = bool(cache.get("master_muted"))
+        app_value = None
+        app_muted = False
+        if self._e2_mode() == "app_volume":
+            app_value, app_muted = self._e2_audio_values(cache)
+        if master is None and app_value is None:
+            return
+        line = protocol.cmd_values(master, app_value, master_muted, app_muted)
+        now = int(time.monotonic() * 1000)
+        if not force and line == self._values_line \
+                and now - self._values_sent_ms < 2000:
+            return
+        self._values_line = line
+        self._values_sent_ms = now
+        if self._link_active and not self.dry_run:
+            self.serial.send(line)
 
     def _sim_enabled(self):
         if not self.sim_enabled:
@@ -1496,7 +1938,7 @@ class MainWindow(QMainWindow):
             self.log("act", "volume failed: %s" % exc)
 
     def _apply_app_volume(self, delta):
-        target = self.cfg["audio"].get("target_app", "").strip()
+        target = self._e2_target()
         if not target:
             self.log("act", "audio target app not set")
             return
@@ -1536,7 +1978,7 @@ class MainWindow(QMainWindow):
             self.log("act", "mute failed: %s" % exc)
 
     def _mute_app_toggle(self):
-        target = self.cfg["audio"].get("target_app", "").strip()
+        target = self._e2_target()
         if not target:
             self.log("act", "audio target app not set")
             return
@@ -1591,6 +2033,8 @@ class MainWindow(QMainWindow):
         self.display_preview.set_pc("C45 G30 52C")
 
     def closeEvent(self, event):  # noqa: N802 - Qt naming
+        if getattr(self, "tour", None) is not None:
+            self.tour.hide()
         self._audio_stop.set()
         self._telemetry_stop.set()
         self._audio_thread.join(timeout=1.5)

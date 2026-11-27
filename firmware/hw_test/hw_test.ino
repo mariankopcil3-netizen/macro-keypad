@@ -47,7 +47,9 @@ void setup() {
   Serial.println("=== HW TEST: display + encoders ===");
 
   pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, HIGH);   // backlight ON
+  digitalWrite(TFT_BL, LOW);    // backlight ON (module is active LOW)
+
+  SPI.begin(18, -1, 23, 5);     // SCK / MOSI of the display
 
   pinMode(E1_CLK, INPUT_PULLUP);
   pinMode(E1_DT,  INPUT_PULLUP);
